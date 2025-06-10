@@ -8,6 +8,8 @@ Download compatible cuda driver
 wget https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
 chmod +x cuda_11.6.2_510.47.03_linux.run
 sudo ./cuda_11.6.2_510.47.03_linux.run --override
+export PATH=/usr/local/cuda-11.6/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda-11.6/lib64:$LD_LIBRARY_PATH
 ```
 Accept the agreement and install. Once installed, the run file can be removed.
 ```
