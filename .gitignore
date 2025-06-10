@@ -10,3 +10,4 @@ scene/__pycache__
 lpipsPyTorch/__pycache__
 lpipsPyTorch/modules/__pycache__
 arguments/__pycache__
+.vscode
