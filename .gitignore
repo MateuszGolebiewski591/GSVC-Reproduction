@@ -1,2 +1,12 @@
 data
 outputs
+submodules/__MACOSX
+submodules/arithmetic
+submodules/diff-gaussian-rasterization
+submodules/gridencoder
+submodules/simple-knn
+utils/__pycache__
+scene/__pycache__
+lpipsPyTorch/__pycache__
+lpipsPyTorch/modules/__pycache__
+arguments/__pycache__
