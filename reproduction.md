@@ -9,8 +9,10 @@ wget https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/
 chmod +x cuda_11.6.2_510.47.03_linux.run
 sudo ./cuda_11.6.2_510.47.03_linux.run --override
 ```
-Accept the agreement and install
-
+Accept the agreement and install. Once installed, the run file can be removed.
+```
+rm cuda_11.6.2_510.47.03_linux.run
+```
 Next, install compatible compilers
 ```
 sudo apt install gcc-9 g++-9
