@@ -54,7 +54,7 @@ bit2MB_scale = 8 * 1024 * 1024
 run_codec = True
 
 try:
-    from torch.utils.tensorboard import SummaryWriter
+    from torch.utils.tensorboard import SummaryWriter #logging
     TENSORBOARD_FOUND = True
     print("found tf board")
 except ImportError:
@@ -89,7 +89,7 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
 
-    gaussians = GaussianModel(
+    gaussians = GaussianModel( #initialise model and scene
         dataset.feat_dim,
         dataset.n_offsets,
         dataset.voxel_size,
@@ -105,7 +105,7 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
     gaussians.update_anchor_bound()
 
     gaussians.training_setup(opt)
-    if checkpoint:
+    if checkpoint: # restores from a checkpoint if there is one 
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
 
@@ -118,7 +118,7 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
     first_iter += 1
     torch.cuda.synchronize(); t_start = time.time()
     log_time_sub = 0
-    for iteration in range(first_iter, opt.iterations + 1):
+    for iteration in range(first_iter, opt.iterations + 1): # main training loop 
         # network gui not available in scaffold-gs yet
         if network_gui.conn == None:
             network_gui.try_connect()
@@ -169,7 +169,7 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
         bit_per_scaling_param = render_pkg["bit_per_scaling_param"]
         bit_per_offsets_param = render_pkg["bit_per_offsets_param"]
 
-        if iteration % 2000 == 0 and bit_per_param is not None:
+        if iteration % 2000 == 0 and bit_per_param is not None: #bitrate logging every 2000 iterations 
 
             ttl_size_feat_MB = bit_per_feat_param.item() * gaussians.get_anchor.shape[0] * gaussians.feat_dim / bit2MB_scale
             ttl_size_scaling_MB = bit_per_scaling_param.item() * gaussians.get_anchor.shape[0] * 6 / bit2MB_scale
@@ -382,7 +382,7 @@ def training_report(tb_writer, dataset_name, iteration, Ll1, loss, l1_loss, elap
         scene.gaussians.train()
 
 
-def render_set(model_path, name, iteration, views, gaussians, pipeline, background):
+def render_set(model_path, name, iteration, views, gaussians, pipeline, background):#Renders the image views and calculates PSNR 
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     error_path = os.path.join(model_path, name, "ours_{}".format(iteration), "errors")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
@@ -436,7 +436,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
 
     return t_list, visible_count_list
 
-
+#Handles rendering on the entire train/test split
 def render_sets(args_param, dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train=True, skip_test=False, wandb=None, tb_writer=None, dataset_name=None, logger=None, x_bound_min=None, x_bound_max=None):
     with torch.no_grad():
         gaussians = GaussianModel(
@@ -452,21 +452,21 @@ def render_sets(args_param, dataset : ModelParams, iteration : int, pipeline : P
             log2_hashmap_size_2D=args_param.log2_2D,
             decoded_version=run_codec,
         )
-        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)
+        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)# loads scene with trained gaussians
         gaussians.eval()
         if x_bound_min is not None:
             gaussians.x_bound_min = x_bound_min
             gaussians.x_bound_max = x_bound_max
 
         bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
-        background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+        background = torch.tensor(bg_color, dtype=torch.float32, device="cuda") # sets background colour
 
         if not skip_train:
             t_train_list, _  = render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background)
             train_fps = 1.0 / torch.tensor(t_train_list[5:]).mean()
             logger.info(f'Train FPS: \033[1;35m{train_fps.item():.5f}\033[0m')
             if wandb is not None:
-                wandb.log({"train_fps":train_fps.item(), })
+                wandb.log({"train_fps":train_fps.item(), }) #FPS and visible count logging
 
         if not skip_test:
             t_test_list, visible_count = render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background)
@@ -480,7 +480,7 @@ def render_sets(args_param, dataset : ModelParams, iteration : int, pipeline : P
     return visible_count
 
 
-def readImages(renders_dir, gt_dir):
+def readImages(renders_dir, gt_dir): # Reads the PNGs
     renders = []
     gts = []
     image_names = []
@@ -492,8 +492,8 @@ def readImages(renders_dir, gt_dir):
         image_names.append(fname)
     return renders, gts, image_names
 
-
-def evaluate(model_paths, visible_count=None, wandb=None, tb_writer=None, dataset_name=None, logger=None):
+#Computes the PSNR , SSIM and LPIPS for a rendered scene
+def evaluate(model_paths, visible_count=None, wandb=None, tb_writer=None, dataset_name=None, logger=None): 
 
     full_dict = {}
     per_view_dict = {}
@@ -562,7 +562,7 @@ def evaluate(model_paths, visible_count=None, wandb=None, tb_writer=None, datase
     with open(scene_dir + "/per_view.json", 'w') as fp:
         json.dump(per_view_dict[scene_dir], fp, indent=True)
 
-def get_logger(path):
+def get_logger(path): # Logs both to terminal and to a file 
     import logging
 
     logger = logging.getLogger()
