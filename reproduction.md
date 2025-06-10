@@ -39,13 +39,13 @@ unzip arithmetic.zip
 cd ..
 ```
 
-2. Install environment
+3. Install environment
 ```
 conda env create --file environment.yml
 conda activate HAC_env
 ```
 
-3. Install dependencies
+4. Install dependencies
 ```
 pip install -r requirements.txt
 ```
