@@ -1,0 +1,10 @@
+torch-scatter
+einops
+wandb
+lpips
+./submodules/diff-gaussian-rasterization
+./submodules/simple-knn
+./submodules/gridencoder
+./submodules/arithmetic
+
+-f https://data.pyg.org/whl/torch-1.12.1+cu113.html
