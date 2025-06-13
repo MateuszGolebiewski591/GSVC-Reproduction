@@ -231,7 +231,7 @@ class GaussianModel(nn.Module): #This is the main nerual model
                 nn.Linear(3+1, feat_dim), #inputs 3D coordinates + 1 extra feature
                 nn.ReLU(True),
                 nn.Linear(feat_dim, 3),
-                nn.Softmax(dim=1) #outputs a 3D ectorwith probability distribution via Softmax
+                nn.Softmax(dim=1) #outputs a 3D vector with probability distribution via Softmax
             ).cuda()
 
         mlp_input_feat_dim = feat_dim
@@ -967,7 +967,7 @@ class GaussianModel(nn.Module): #This is the main nerual model
 
         self.max_radii2D = torch.zeros((self.get_anchor.shape[0]), device="cuda")
 
-    def save_mlp_checkpoints(self,path): # saves teh MLP components of the model (components used for predictions mostly)
+    def save_mlp_checkpoints(self,path): # saves the MLP components of the model (components used for predictions mostly)
         mkdir_p(os.path.dirname(path))
 
         if self.use_feat_bank:

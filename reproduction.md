@@ -1,19 +1,34 @@
+## Reproduction Goals
+Our goal is to reproduce the model featured in https://openreview.net/forum?id=JbRM5QKRDd&utm_source=chatgpt.com
+
+## HAC adaptation
+Due to previous dependencies no longer working with one another, we began by updating the environment. 
+ - Removed the pytorch channel from environment.yml
+ - Changed python version in environment.yml from 3.7.13 to 3.10
+ - removed torchaudio dependency from environment.yml
+ - removed pip installs from environment.yml and moved them into a newly created requirements.txt
+ - moved pytorch-scatter dependency into requirements.txt
+
+The original HAC codebase can be found at https://github.com/YihangChen-ee/HAC
+
+## Commit history:
+Base commit after adaptation - 7e891b17141534d797afe5e7c5c0c0e15f1000a7
+
 ## Installation
 
-We tested our code on a server with Ubuntu 24.04.2, cuda 11.6, gcc 9.5.0
+We tested our code locally with Ubuntu 24.04.2, cuda 11.6, gcc 9.5.0 on a single rtx 3090 graphics card
 1. Ensure compatible driver and compiler
 
 Download compatible cuda driver
 ```
-wget https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run
-chmod +x cuda_11.6.2_510.47.03_linux.run
-sudo ./cuda_11.6.2_510.47.03_linux.run --override
+wget https://developer.download.nvidia.com/compute/cuda/11.6.0/local_installers/cuda_11.6.0_510.39.01_linux.run
+sudo sh cuda_11.6.0_510.39.01_linux.run --override
 export PATH=/usr/local/cuda-11.6/bin:$PATH
 export LD_LIBRARY_PATH=/usr/local/cuda-11.6/lib64:$LD_LIBRARY_PATH
 ```
 Accept the agreement and install. Once installed, the run file can be removed.
 ```
-rm cuda_11.6.2_510.47.03_linux.run
+rm cuda_11.6.0_510.39.01_linux.run
 ```
 Next, install compatible compilers
 ```

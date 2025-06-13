@@ -18,7 +18,7 @@ from scene.gaussian_model import GaussianModel
 from arguments import ModelParams
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
 
-class Scene:
+class Scene: #Defines a scene that takes in a Gaussian model object which stores the 3D scene
 
     gaussians : GaussianModel
 
@@ -30,7 +30,7 @@ class Scene:
         self.loaded_iter = None
         self.gaussians = gaussians
 
-        if load_iteration:
+        if load_iteration:#If given loads a model from a specific iteration
             if load_iteration == -1:
                 self.loaded_iter = searchForMaxIteration(os.path.join(self.model_path, "point_cloud"))
             else:
@@ -42,7 +42,7 @@ class Scene:
         self.test_cameras = {}
 
         self.x_bound = None
-        if os.path.exists(os.path.join(args.source_path, "sparse")):
+        if os.path.exists(os.path.join(args.source_path, "sparse")): #Realises scene format (COLMAP or Blender)
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, args.lod)
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
             print("Found transforms_train.json file, assuming Blender data set!")
@@ -77,14 +77,14 @@ class Scene:
 
         # print(f'self.cameras_extent: {self.cameras_extent}')
 
-        for resolution_scale in resolution_scales:
+        for resolution_scale in resolution_scales: #Load camera data for each resolution
             print("Loading Training Cameras")
             self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args)
             print("Loading Test Cameras")
             self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
 
-        if self.loaded_iter:
-            self.gaussians.load_ply_sparse_gaussian(os.path.join(self.model_path,
+        if self.loaded_iter:#load or initialise gaussians
+            self.gaussians.load_ply_sparse_gaussian(os.path.join(self.model_path, 
                                                            "point_cloud",
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud.ply"))
