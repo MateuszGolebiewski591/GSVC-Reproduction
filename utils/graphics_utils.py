@@ -48,6 +48,30 @@ def getWorld2View2(R, t, translate=np.array([.0, .0, .0]), scale=1.0):
     Rt = np.linalg.inv(C2W)
     return np.float32(Rt)
 
+def getOrthoProjectionMatrix(left, right, bottom, top, znear,  zfar):
+    P = torch.zeros(4, 4)
+    P[0, 0] = 2.0 / (right - left)
+    P[1, 1] = 2.0 / (top - bottom)
+    P[2, 2] = 1.0 / (zfar - znear)
+    P[0, 3] = -(right + left) / (right - left)
+    P[1, 3] = -(top + bottom) / (top - bottom)
+    P[2, 3] = -znear / (zfar - znear)
+
+    P[3, 3] = 1.0
+    return P
+
+def gettest(left, right, bottom, top, znear, zfar):
+    P = torch.zeros(4, 4)
+    #print("znear is",znear)
+    P[0, 0] = 2.0 * znear / (right - left) #Can't change
+    P[1, 1] = 2.0 * znear / (top - bottom) #Can't change
+    P[2, 2] = 1.0 / (zfar - znear) #good
+    P[0, 3] = -(right + left) / (right - left) #good
+    P[1, 3] = -(top + bottom) / (top - bottom) #good
+    P[2, 3] = -znear / (zfar - znear) #good
+    P[3, 3] = 1.0 #good
+    return P
+
 def getProjectionMatrix(znear, zfar, fovX, fovY):
     tanHalfFovY = math.tan((fovY / 2))
     tanHalfFovX = math.tan((fovX / 2))
@@ -61,13 +85,17 @@ def getProjectionMatrix(znear, zfar, fovX, fovY):
 
     z_sign = 1.0
 
-    P[0, 0] = 2.0 * znear / (right - left)
-    P[1, 1] = 2.0 * znear / (top - bottom)
-    P[0, 2] = (right + left) / (right - left)
-    P[1, 2] = (top + bottom) / (top - bottom)
-    P[3, 2] = z_sign
-    P[2, 2] = z_sign * zfar / (zfar - znear)
-    P[2, 3] = -(zfar * znear) / (zfar - znear)
+    #P[0, 0] = 2.0 * znear / (right - left)
+    #P[1, 1] = 2.0 * znear / (top - bottom)
+    #P[0, 2] = (right + left) / (right - left)
+    #P[1, 2] = (top + bottom) / (top - bottom)
+    #P[3, 2] = z_sign
+    #P[2, 2] = z_sign * zfar / (zfar - znear)
+    #P[2, 3] = -(zfar * znear) / (zfar - znear)
+    P = gettest(left, right, bottom, top, znear, zfar)
+    return P
+    P = getOrthoProjectionMatrix(left, right, bottom, top, znear, zfar)
+    print(f"\nProj matrix is ${P}")
     return P
 
 def fov2focal(fov, pixels):
