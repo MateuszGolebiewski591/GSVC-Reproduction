@@ -22,7 +22,7 @@ class Scene: #Defines a scene that takes in a Gaussian model object which stores
 
     gaussians : GaussianModel
 
-    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0], ply_path=None):
+    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=False, resolution_scales=[1.0], ply_path=None):
         """b
         :param path: Path to colmap scene main folder.
         """
@@ -79,9 +79,9 @@ class Scene: #Defines a scene that takes in a Gaussian model object which stores
 
         for resolution_scale in resolution_scales: #Load camera data for each resolution
             print("Loading Training Cameras")
-            self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args)
+            self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args, is_training=False)
             print("Loading Test Cameras")
-            self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
+            self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args, is_training=False)
 
         if self.loaded_iter:#load or initialise gaussians
             self.gaussians.load_ply_sparse_gaussian(os.path.join(self.model_path, 

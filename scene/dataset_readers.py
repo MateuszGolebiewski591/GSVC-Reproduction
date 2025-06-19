@@ -139,6 +139,34 @@ def storePly(path, xyz, rgb):
     ply_data = PlyData([vertex_element])
     ply_data.write(path)
 
+def compute_scene_bounds(bin_path, margin):
+    try:
+        xyz_colmap, _, _ = read_points3D_binary(bin_path)
+    except:
+        pass 
+    if xyz_colmap is not None:
+        min_bound = xyz_colmap.min(axis=0)
+        max_bound = xyz_colmap.max(axis=0)
+        print("Using bounds from COLMAP using cloud", min_bound, ",", max_bound)
+    return min_bound - margin, max_bound + margin 
+
+def estimate_focus_center(cam_infos):
+    centers = []
+    directions = []
+    for cam in cam_infos:
+        centers.append(cam.T)
+        R = cam.R 
+        forward = -R[2,:]
+        directions.append(forward)
+    centers = np.stack(centers)
+    directions = np.stack(directions)
+    avg_center = centers.mean(axis=0)
+    avg_direction = directions.mean(axis=0)
+    avg_direction /= np.linalg.norm(avg_direction)
+    object_center = avg_center + 1.0 * avg_direction
+    print("Estimated center: ", object_center)
+    return object_center
+
 def readColmapSceneInfo(path, images, eval, lod, llffhold=8):
     try:
         cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.bin")
@@ -177,20 +205,26 @@ def readColmapSceneInfo(path, images, eval, lod, llffhold=8):
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
     ply_path = os.path.join(path, "sparse/0/points3D.ply")
-    bin_path = os.path.join(path, "sparse/0/points3D.bin")
-    txt_path = os.path.join(path, "sparse/0/points3D.txt")
-    if not os.path.exists(ply_path):
-        print("Converting point3d.bin to .ply, will happen only the first time you open the scene.")
-        try:
-            xyz, rgb, _ = read_points3D_binary(bin_path)
-        except:
-            xyz, rgb, _ = read_points3D_text(txt_path)
-        storePly(ply_path, xyz, rgb)
-    # try:
-    print(f'start fetching data from ply file')
-    pcd = fetchPly(ply_path)
-    # except:
-    #     pcd = None
+    bin_path = os.path.join(path, "sparse/0", "points3D.bin")
+    low, high = compute_scene_bounds(bin_path, margin=0.5)
+    
+    num_pts = 10_000
+    num_background = 7000
+    num_center = 3_000
+    print(f"Generating random point cloud ({num_pts})...")
+    center = estimate_focus_center(cam_infos)    
+    # We create random points
+    xyz_center = np.random.normal(loc=center,size=(num_center, 3))
+    xyz_background = np.random.uniform(low=low, high=high, size=(num_background, 3))
+    xyz = np.concatenate([xyz_center, xyz_background], axis=0)
+    shs = np.random.random((num_pts, 3)) / 255.0
+    pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
+    storePly(ply_path, xyz, SH2RGB(shs) * 255)
+
+    try:
+        pcd = fetchPly(ply_path)
+    except:
+        pcd = None
 
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
@@ -329,17 +363,17 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png", ply_pa
     nerf_normalization = getNerfppNorm(train_cam_infos)
     if ply_path is None:
         ply_path = os.path.join(path, "points3d.ply")
-    if not os.path.exists(ply_path):
-        # Since this data set has no colmap data, we start with random points
-        num_pts = 10_000
-        print(f"Generating random point cloud ({num_pts})...")
+    
+    # Since this data set has no colmap data, we start with random points
+    num_pts = 10_000
+    print(f"Generating random point cloud ({num_pts})...")
         
-        # We create random points inside the bounds of the synthetic Blender scenes
-        xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3
-        shs = np.random.random((num_pts, 3)) / 255.0
-        pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
+    # We create random points inside the bounds of the synthetic Blender scenes
+    xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3
+    shs = np.random.random((num_pts, 3)) / 255.0
+    pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
 
-        storePly(ply_path, xyz, SH2RGB(shs) * 255)
+    storePly(ply_path, xyz, SH2RGB(shs) * 255)
     try:
         pcd = fetchPly(ply_path)
     except:
