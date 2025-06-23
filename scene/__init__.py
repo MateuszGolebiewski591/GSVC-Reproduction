@@ -22,13 +22,14 @@ class Scene: #Defines a scene that takes in a Gaussian model object which stores
 
     gaussians : GaussianModel
 
-    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=False, resolution_scales=[1.0], ply_path=None):
+    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=False, resolution_scales=[1.0], ply_path=None, training=True):
         """b
         :param path: Path to colmap scene main folder.
         """
         self.model_path = args.model_path
         self.loaded_iter = None
         self.gaussians = gaussians
+        self.training = training
 
         if load_iteration:#If given loads a model from a specific iteration
             if load_iteration == -1:
@@ -42,12 +43,15 @@ class Scene: #Defines a scene that takes in a Gaussian model object which stores
         self.test_cameras = {}
 
         self.x_bound = None
-        if os.path.exists(os.path.join(args.source_path, "sparse")): #Realises scene format (COLMAP or Blender)
-            scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, args.lod)
-        elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
-            print("Found transforms_train.json file, assuming Blender data set!")
-            scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval, ply_path=ply_path)
-            self.x_bound = 1.3
+        #if os.path.exists(os.path.join(args.source_path, "sparse")): #Realises scene format (COLMAP or Blender)
+            #scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, args.lod)
+        #elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
+            #print("Found transforms_train.json file, assuming Blender data set!")
+            #scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval, ply_path=ply_path)
+            #self.x_bound = 1.3
+        if os.path.exists(os.path.join(args.source_path, args.images)):
+            print("Found images folder. Assuming video data set!")
+            scene_info =  sceneLoadTypeCallbacks["Video"](args.source_path, args.white_background, args.eval, ply_path=ply_path, training=training)
         else:
             assert False, "Could not recognize scene type!"
 

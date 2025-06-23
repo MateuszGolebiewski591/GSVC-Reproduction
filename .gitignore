@@ -13,3 +13,4 @@ arguments/__pycache__
 .vscode
 __pycache__
 /gaussian_renderer/
+images

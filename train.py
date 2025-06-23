@@ -453,7 +453,7 @@ def render_sets(args_param, dataset : ModelParams, iteration : int, pipeline : P
             log2_hashmap_size_2D=args_param.log2_2D,
             decoded_version=run_codec,
         )
-        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False)# loads scene with trained gaussians
+        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, training=False)# loads scene with trained gaussians
         gaussians.eval()
         if x_bound_min is not None:
             gaussians.x_bound_min = x_bound_min
