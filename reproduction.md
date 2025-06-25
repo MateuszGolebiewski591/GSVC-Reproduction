@@ -14,6 +14,8 @@ The original HAC codebase can be found at https://github.com/YihangChen-ee/HAC
 ## Commit history:
 Base commit after adaptation - 7e891b17141534d797afe5e7c5c0c0e15f1000a7
 
+Introduction of video compatability to the HAC series - 164f3c46cfde89ba75fbbac58b8b65208e6d1438 - Altered the code to successfully take in a video sequence and train on it regardless of whether a pre-existing colmap exists or not. (Cameras are now initialised with the z coordinate linked directly to time. A colmap of a video can be trained upon if it exists. If there is no colmap, one will be created via a custom method. This method initialises a cuboid of random gaussians for the dataset to train on. The instantiation is reliable, but the results can be mixed.)
+
 ## Installation
 
 We tested our code locally with Ubuntu 24.04.2, cuda 11.6, gcc 9.5.0 on a single rtx 3090 graphics card

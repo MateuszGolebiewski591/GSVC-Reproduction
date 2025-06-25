@@ -433,8 +433,8 @@ def createCameraTransforms(path, z_spacing=1, white_background=False, training=T
 
 def compute_video_bounds(cam_infos, h=0.2, num_pts=10000):
     camera_z_coordinates = [cam.T[2] for cam in cam_infos] #Work out the min and max z within which to spawn gaussians
-    z_min = min(camera_z_coordinates) - h 
-    z_max = max(camera_z_coordinates) + h
+    z_max = -(min(camera_z_coordinates) - h) 
+    z_min = -(max(camera_z_coordinates) + h)
 
     y_depth = np.tan(cam_infos[0].FovY / 2) * h #uses the view depth h and the fov to work out how far to distribute gaussians so the whole image fits on the screen and is evenly filled with gaussians
     x_depth = np.tan(cam_infos[0].FovX / 2) * h
@@ -468,7 +468,7 @@ def generate_colmap_gaussians(path):
     storePly(str(ply_path), xyz, rgb)
     return pcd, str(ply_path)
 
-def readVideoInfo(path, white_background, eval, ply_path, training):
+def readVideoInfo(path, white_background, eval, ply_path, training, h):
     #run()
     #return
     z_spacing = 0.1
@@ -490,7 +490,7 @@ def readVideoInfo(path, white_background, eval, ply_path, training):
         ply_path = ply_path_alt
         if  not os.path.exists(ply_path) or training: 
             num_pts = 20_000
-            h = 0.05
+            
             print(f"Generating random point cloud ({num_pts})...")
 
             xyz = compute_video_bounds(train_cam_infos, h, num_pts)
@@ -537,7 +537,7 @@ def downsampled_subset(images_dir: str, output_dir: str, step: int = 30) -> str:
     return str(output_dir)
 
 def run():
-    dataset_path = pathlib.Path("data/videos/ShakeNDry")
+    dataset_path = pathlib.Path("data/videos/Bosphorus")
     pycolmap.verbose=True
     image_path = dataset_path / 'images'
     subset_path = 'images'
@@ -546,7 +546,7 @@ def run():
     db_path = dataset_path / 'database.db'
     ply_path = sparse_path / 'points3D.ply'
 
-    downsampled_path = downsampled_subset(image_path, subset_path, step=8)
+    downsampled_path = downsampled_subset(image_path, subset_path, step=4)
 
     pycolmap.extract_features(db_path, downsampled_path)
     pycolmap.match_exhaustive(db_path)

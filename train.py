@@ -101,7 +101,7 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
         log2_hashmap_size=args_param.log2,
         log2_hashmap_size_2D=args_param.log2_2D,
     )
-    scene = Scene(dataset, gaussians, ply_path=ply_path)
+    scene = Scene(dataset, gaussians, ply_path=ply_path, h=args_param.h)
     gaussians.update_anchor_bound()
 
     gaussians.training_setup(opt)
@@ -151,12 +151,12 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
-
+       
         voxel_visible_mask = prefilter_voxel(viewpoint_cam, gaussians, pipe, background)
         # voxel_visible_mask:bool = radii_pure > 0: 应该是[N_anchor]?
         retain_grad = (iteration < opt.update_until and iteration >= 0)
-        render_pkg = render(viewpoint_cam, gaussians, pipe, background, visible_mask=voxel_visible_mask, retain_grad=retain_grad, step=iteration)
-        image, viewspace_point_tensor, visibility_filter, offset_selection_mask, radii, scaling, opacity = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["selection_mask"], render_pkg["radii"], render_pkg["scaling"], render_pkg["neural_opacity"]
+        render_pkg = render(viewpoint_cam, gaussians, pipe, background, visible_mask=voxel_visible_mask, retain_grad=retain_grad, step=iteration, h=args_param.h)
+        image, viewspace_point_tensor, visibility_filter, offset_selection_mask, radii, scaling, opacity, opacity_sum = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["selection_mask"], render_pkg["radii"], render_pkg["scaling"], render_pkg["neural_opacity"], render_pkg["opacity_sum"]
         # image: [3, H, W]. inited as: torch::full({NUM_CHANNELS, H, W}, 0.0, float_opts);
         # viewspace_point_tensor=screenspace_points: [N_opacity_pos_gaussian, 3]
         # visibility_filter: radii > 0. 其中 radii inited as: torch::full({P}, 0, means3D.options().dtype(torch::kInt32)); 其中P=N_opacity_pos_gaussian
@@ -234,7 +234,7 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
                 # visibility_filter: radii > 0. 其中 radii inited as: torch::full({P}, 0, means3D.options().dtype(torch::kInt32)); 其中P=N_opacity_pos_gaussian
                 # offset_selection_mask: [N_visible_anchor*k]。 用来表示visible anchor中哪几个gaussian是有效的，根据opacity>0.0得到
                 # voxel_visible_mask:bool = radii_pure > 0: 应该是[N_anchor]? voxel_visible_mask.sum()=N_visible_anchor
-                gaussians.training_statis(viewspace_point_tensor, opacity, visibility_filter, offset_selection_mask, voxel_visible_mask)
+                gaussians.training_statis(viewspace_point_tensor, opacity, visibility_filter, offset_selection_mask, voxel_visible_mask, opacity_sum)
                 if iteration not in range(3000, 4000):  # let the model get fit to quantization
                     # densification
                     if iteration > opt.update_from and iteration % opt.update_interval == 0:
@@ -453,7 +453,7 @@ def render_sets(args_param, dataset : ModelParams, iteration : int, pipeline : P
             log2_hashmap_size_2D=args_param.log2_2D,
             decoded_version=run_codec,
         )
-        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, training=False)# loads scene with trained gaussians
+        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, training=False, h=args_param.h)# loads scene with trained gaussians
         gaussians.eval()
         if x_bound_min is not None:
             gaussians.x_bound_min = x_bound_min
@@ -605,6 +605,7 @@ def main(argv=None):
     parser.add_argument("--log2_2D", type=int, default = 15)
     parser.add_argument("--n_features", type=int, default = 4)
     parser.add_argument("--lmbda", type=float, default = 0.001)
+    parser.add_argument("--h", type=float, default=0.4)
     args = parser.parse_args(argv)
     args.save_iterations.append(args.iterations)
 

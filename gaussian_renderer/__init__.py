@@ -22,7 +22,7 @@ from scene.gaussian_model import GaussianModel
 from utils.encodings import STE_binary, STE_multistep
 
 
-def generate_neural_gaussians(viewpoint_camera, pc : GaussianModel, visible_mask=None, is_training=False, step=0):
+def generate_neural_gaussians(viewpoint_camera, pc : GaussianModel, visible_mask=None, is_training=False, step=0, h=0.4):
     ## view frustum filtering for acceleration
 
     time_sub = 0
@@ -137,6 +137,17 @@ def generate_neural_gaussians(viewpoint_camera, pc : GaussianModel, visible_mask
     mask = (neural_opacity > 0.0)
     mask = mask.view(-1)  # [N_visible_anchor*K]
 
+    K = pc.n_offsets
+    #total_anchors = pc.get_anchor.shape[0]
+    expanded_visible_mask = visible_mask.unsqueeze(1).expand(-1, K).reshape(-1)
+    full_offset_selection_mask = torch.zeros_like(expanded_visible_mask, dtype=torch.bool)
+    full_offset_selection_mask[expanded_visible_mask] = mask
+
+    reshaped_opacity = neural_opacity.view(-1, pc.n_offsets)
+    opacity_sum = reshaped_opacity.sum(dim=1, keepdim=True)
+    full_opacity_sum = torch.zeros((pc.get_anchor.shape[0], 1), device=neural_opacity.device)
+    full_opacity_sum[visible_mask] = opacity_sum
+
     # select opacity
     opacity = neural_opacity[mask]  # [N_opacity_pos_gaussian, 1]
 
@@ -167,21 +178,26 @@ def generate_neural_gaussians(viewpoint_camera, pc : GaussianModel, visible_mask
     xyz = repeat_anchor + offsets  # [N_opacity_pos_gaussian, 3]
 
     if is_training:
-        return xyz, color, opacity, scaling, rot, neural_opacity, mask, bit_per_param, bit_per_feat_param, bit_per_scaling_param, bit_per_offsets_param
+        return xyz, color, opacity, scaling, rot, neural_opacity, full_offset_selection_mask, bit_per_param, bit_per_feat_param, bit_per_scaling_param, bit_per_offsets_param, full_opacity_sum
     else:
         return xyz, color, opacity, scaling, rot, time_sub
 
 
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, visible_mask=None, retain_grad=False, step=0):
+def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, visible_mask=None, retain_grad=False, step=0, h=0.4):
     """
     Render the scene.
 
     Background tensor (bg_color) must be on GPU!
     """
+
+    cam_z = viewpoint_camera.camera_center[2]
+    anchor_z = pc.get_anchor[:, 2]
+    #visible_mask = (anchor_z >= cam_z - h) & (anchor_z <= cam_z + h)
+
     is_training = pc.get_color_mlp.training
 
     if is_training:
-        xyz, color, opacity, scaling, rot, neural_opacity, mask, bit_per_param, bit_per_feat_param, bit_per_scaling_param, bit_per_offsets_param = generate_neural_gaussians(viewpoint_camera, pc, visible_mask, is_training=is_training, step=step)
+        xyz, color, opacity, scaling, rot, neural_opacity, mask, bit_per_param, bit_per_feat_param, bit_per_scaling_param, bit_per_offsets_param, opacity_sum = generate_neural_gaussians(viewpoint_camera, pc, visible_mask, is_training=is_training, step=step)
     else:
         xyz, color, opacity, scaling, rot, time_sub = generate_neural_gaussians(viewpoint_camera, pc, visible_mask, is_training=is_training, step=step)
 
@@ -237,6 +253,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
                 "bit_per_feat_param": bit_per_feat_param,
                 "bit_per_scaling_param": bit_per_scaling_param,
                 "bit_per_offsets_param": bit_per_offsets_param,
+                "opacity_sum": opacity_sum,
                 }
     else:
         return {"render": rendered_image,

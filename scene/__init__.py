@@ -22,7 +22,7 @@ class Scene: #Defines a scene that takes in a Gaussian model object which stores
 
     gaussians : GaussianModel
 
-    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=False, resolution_scales=[1.0], ply_path=None, training=True):
+    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=False, resolution_scales=[1.0], ply_path=None, training=True, h=0.4):
         """b
         :param path: Path to colmap scene main folder.
         """
@@ -51,7 +51,7 @@ class Scene: #Defines a scene that takes in a Gaussian model object which stores
             #self.x_bound = 1.3
         if os.path.exists(os.path.join(args.source_path, args.images)):
             print("Found images folder. Assuming video data set!")
-            scene_info =  sceneLoadTypeCallbacks["Video"](args.source_path, args.white_background, args.eval, ply_path=ply_path, training=training)
+            scene_info =  sceneLoadTypeCallbacks["Video"](args.source_path, args.white_background, args.eval, ply_path=ply_path, training=training, h=h)
         else:
             assert False, "Could not recognize scene type!"
 

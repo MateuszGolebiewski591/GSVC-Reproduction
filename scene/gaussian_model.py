@@ -755,12 +755,19 @@ class GaussianModel(nn.Module): #This is the main nerual model
 
         return optimizable_tensors
 
-    def training_statis(self, viewspace_point_tensor, opacity, update_filter, offset_selection_mask, anchor_visible_mask): # collects training statistics used for update heuristics
-        temp_opacity = opacity.clone().view(-1).detach()
-        temp_opacity[temp_opacity<0] = 0
-        temp_opacity = temp_opacity.view([-1, self.n_offsets])
-
-        self.opacity_accum[anchor_visible_mask] += temp_opacity.sum(dim=1, keepdim=True)
+    def training_statis(self, viewspace_point_tensor, opacity, update_filter, offset_selection_mask, anchor_visible_mask, opacity_sum): # collects training statistics used for update heuristics
+        clamp_opacity = opacity.clone().detach()
+        clamp_opacity[clamp_opacity<0] = 0
+        temp_opacity = clamp_opacity.view(-1, self.n_offsets).sum(dim=1, keepdim=True)
+        #full_opacity_sum = torch.zeros((self.get_anchor.shape[0], 1), device=opacity.device)
+        #full_opacity_sum[anchor_visible_mask] = temp_opacity
+        #temp_opacity = temp_opacity.view([-1, self.n_offsets])
+        full_opacity_sum = torch.zeros_like(opacity_sum)
+        nonzero_mask = opacity_sum.view(-1) != 0
+        full_opacity_sum[nonzero_mask] = temp_opacity
+        opacity_sum = full_opacity_sum
+        #print(f"[DEBUG]: min={temp_opacity.min()}, max={temp_opacity.max()}")
+        self.opacity_accum += opacity_sum
         self.anchor_demon[anchor_visible_mask] += 1
 
         anchor_visible_mask = anchor_visible_mask.unsqueeze(dim=1).repeat([1, self.n_offsets]).view(-1)
@@ -913,8 +920,15 @@ class GaussianModel(nn.Module): #This is the main nerual model
 
     def adjust_anchor(self, check_interval=100, success_threshold=0.8, grad_threshold=0.0002, min_opacity=0.005): # training-time anchor maintenance routine
         # # adding anchors
-        grads = self.offset_gradient_accum / self.offset_denom
-        grads[grads.isnan()] = 0.0
+        #grads = self.offset_gradient_accum / self.offset_denom
+        #grads[grads.isnan()] = 0.0
+
+        eps = 1e-8
+        valid_mask = self.offset_denom > 0
+        grads = torch.zeros_like(self.offset_gradient_accum)
+        grads[valid_mask] = self.offset_gradient_accum[valid_mask] / (self.offset_denom[valid_mask] + eps)
+
+
         grads_norm = torch.norm(grads, dim=-1)
         offset_mask = (self.offset_denom > check_interval*success_threshold*0.5).squeeze(dim=1)
 
