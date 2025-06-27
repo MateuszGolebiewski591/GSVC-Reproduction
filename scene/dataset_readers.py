@@ -43,6 +43,8 @@ class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
     train_cameras: list
     test_cameras: list
+    backward_train_cameras: list 
+    backward_test_cameras: list
     nerf_normalization: dict
     ply_path: str
 
@@ -392,6 +394,7 @@ def createCameraTransforms(path, z_spacing=1, white_background=False, training=T
     images_folder = os.path.join(path, "images")
     image_files = sorted(os.listdir(images_folder))
     cam_infos = [] 
+    backward_cam_infos = []
 
     progress_bar = tqdm(image_files, desc="Loading dataset")
     ct = 0
@@ -417,19 +420,17 @@ def createCameraTransforms(path, z_spacing=1, white_background=False, training=T
         else:
             image = image.convert("RGB")
 
-        R = np.eye(3) #All cameras face the z axis
+        R_forward = np.eye(3) #All cameras face the z axis
+        R_backward = np.diag([1, 1, -1])
         T = np.array([0.0, 0.0, i * z_spacing]) #All cameras are at [0,0,z] where z is time
+        T_backward = R_backward @ T
         FovX = np.radians(50.0)
         FovY = 2 * np.arctan(np.tan(FovX / 2) * height / width)
-        cam_infos.append(CameraInfo(uid=i, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
+        cam_infos.append(CameraInfo(uid=i, R=R_forward, T=T, FovY=FovY, FovX=FovX, image=image,
                             image_path=image_path, image_name=image_name, width=width, height=height))
-    
-    training_cam_infos = [c for i, c in enumerate(cam_infos) if i % 5 != 0]
-    test_cam_infos = [c for i, c in enumerate(cam_infos) if i % 5 == 0]
-    if training:
-        return training_cam_infos
-    else:
-        return test_cam_infos
+        backward_cam_infos.append(CameraInfo(uid=i, R=R_backward, T=T_backward, FovY=FovY, FovX=FovX, image=image,
+                            image_path=image_path, image_name=image_name, width=width, height=height))
+    return cam_infos, backward_cam_infos
 
 def compute_video_bounds(cam_infos, h=0.2, num_pts=10000):
     camera_z_coordinates = [cam.T[2] for cam in cam_infos] #Work out the min and max z within which to spawn gaussians
@@ -473,9 +474,9 @@ def readVideoInfo(path, white_background, eval, ply_path, training):
     #return
     z_spacing = 0.1
     print("Generating Training Transforms")
-    train_cam_infos = createCameraTransforms(path, z_spacing=z_spacing, white_background=white_background, training=True)
+    train_cam_infos, backward_train_cam_infos = createCameraTransforms(path, z_spacing=z_spacing, white_background=white_background, training=True)
     print("Generating Test Transforms")
-    test_cam_infos =  createCameraTransforms(path, z_spacing=z_spacing, white_background=white_background, training=False)
+    test_cam_infos, backward_test_cam_infos =  createCameraTransforms(path, z_spacing=z_spacing, white_background=white_background, training=False)
     if not eval:
         train_cam_infos.extend(test_cam_infos)
         test_cam_infos = []
@@ -511,9 +512,11 @@ def readVideoInfo(path, white_background, eval, ply_path, training):
     except:
         pcd = None
 
-    scene_info =  SceneInfo(point_cloud=pcd,
+    scene_info = SceneInfo(point_cloud=pcd,
                             train_cameras=train_cam_infos,
                             test_cameras=test_cam_infos,
+                            backward_train_cameras=backward_train_cam_infos,
+                            backward_test_cameras=backward_test_cam_infos,
                             nerf_normalization=nerf_normalization,
                             ply_path=ply_path)
     return scene_info

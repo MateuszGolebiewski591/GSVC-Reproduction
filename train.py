@@ -145,17 +145,22 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
         # Pick a random Camera
         if not viewpoint_stack:
             viewpoint_stack = scene.getTrainCameras().copy()
+            backward_viewpoint_stack = scene.getBackwardTrainCameras().copy()
         
         viewpoint_cam = viewpoint_stack.pop(0)
+        backward_viewpoint_cam = backward_viewpoint_stack.pop(0)
 
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
 
-        voxel_visible_mask = prefilter_voxel(viewpoint_cam, gaussians, pipe, background)
+        forward_voxel_visible_mask = prefilter_voxel(viewpoint_cam, gaussians, pipe, background)
+        backward_voxel_visible_mask = prefilter_voxel(backward_viewpoint_cam, gaussians, pipe, background)
+        voxel_visible_mask = forward_voxel_visible_mask | backward_voxel_visible_mask
         # voxel_visible_mask:bool = radii_pure > 0: 应该是[N_anchor]?
+        
         retain_grad = (iteration < opt.update_until and iteration >= 0)
-        render_pkg = render(viewpoint_cam, gaussians, pipe, background, visible_mask=voxel_visible_mask, retain_grad=retain_grad, step=iteration)
+        render_pkg = render(viewpoint_cam, backward_viewpoint_cam, gaussians, pipe, background, visible_mask=voxel_visible_mask, retain_grad=retain_grad, step=iteration)
         image, viewspace_point_tensor, visibility_filter, offset_selection_mask, radii, scaling, opacity = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["selection_mask"], render_pkg["radii"], render_pkg["scaling"], render_pkg["neural_opacity"]
         # image: [3, H, W]. inited as: torch::full({NUM_CHANNELS, H, W}, 0.0, float_opts);
         # viewspace_point_tensor=screenspace_points: [N_opacity_pos_gaussian, 3]
@@ -201,7 +206,7 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
             loss = loss + args_param.lmbda * (bit_per_param + bit_hash_grid / denom)
 
             loss = loss + 5e-4 * torch.mean(torch.sigmoid(gaussians._mask))
-
+        
         loss.backward()
 
         iter_end.record()
@@ -383,7 +388,7 @@ def training_report(tb_writer, dataset_name, iteration, Ll1, loss, l1_loss, elap
         scene.gaussians.train()
 
 
-def render_set(model_path, name, iteration, views, gaussians, pipeline, background):#Renders the image views and calculates PSNR 
+def render_set(model_path, name, iteration, views, backward_views, gaussians, pipeline, background):#Renders the image views and calculates PSNR 
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     error_path = os.path.join(model_path, name, "ours_{}".format(iteration), "errors")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
@@ -398,10 +403,12 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     per_view_dict = {}
     psnr_list = []
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
-
+        backward_cam = backward_views.pop(0)
         torch.cuda.synchronize(); t_start = time.time()
-        voxel_visible_mask = prefilter_voxel(view, gaussians, pipeline, background)
-        render_pkg = render(view, gaussians, pipeline, background, visible_mask=voxel_visible_mask)
+        forward_voxel_visible_mask = prefilter_voxel(view, gaussians, pipeline, background)
+        backward_voxel_visible_mask = prefilter_voxel(backward_cam, gaussians, pipeline, background)
+        voxel_visible_mask = forward_voxel_visible_mask | backward_voxel_visible_mask
+        render_pkg = render(view, backward_cam, gaussians, pipeline, background, visible_mask=voxel_visible_mask)
         torch.cuda.synchronize(); t_end = time.time()
 
         t_list.append(t_end - t_start)
@@ -463,14 +470,14 @@ def render_sets(args_param, dataset : ModelParams, iteration : int, pipeline : P
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda") # sets background colour
 
         if not skip_train:
-            t_train_list, _  = render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background)
+            t_train_list, _  = render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), scene.getBackwardTrainCameras, gaussians, pipeline, background)
             train_fps = 1.0 / torch.tensor(t_train_list[5:]).mean()
             logger.info(f'Train FPS: \033[1;35m{train_fps.item():.5f}\033[0m')
             if wandb is not None:
                 wandb.log({"train_fps":train_fps.item(), }) #FPS and visible count logging
 
         if not skip_test:
-            t_test_list, visible_count = render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background)
+            t_test_list, visible_count = render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), scene.getBackwardTestCameras, gaussians, pipeline, background)
             test_fps = 1.0 / torch.tensor(t_test_list[5:]).mean()
             logger.info(f'Test FPS: \033[1;35m{test_fps.item():.5f}\033[0m')
             if tb_writer:

@@ -20,11 +20,6 @@ class Camera(nn.Module):
                  trans=np.array([0.0, 0.0, 0.0]), scale=1.0, data_device = "cuda"
                  ):
         super(Camera, self).__init__()
-
-        #T = np.array([-1.69236190e-08, 2.27024445e-08, 4.03112944e+00])
-        #R = np.array([[-4.67515943e-01, -5.28597637e-01, 7.08529153e-01],
-        #             [-8.83984561e-01, 2.79561241e-01, -3.74722237e-01],
-        #             [-3.62673686e-09, -8.01517463e-01, 4.03112944e+00]])
        
         self.uid = uid
         self.colmap_id = colmap_id

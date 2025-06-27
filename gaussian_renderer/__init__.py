@@ -172,18 +172,20 @@ def generate_neural_gaussians(viewpoint_camera, pc : GaussianModel, visible_mask
         return xyz, color, opacity, scaling, rot, time_sub
 
 
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, visible_mask=None, retain_grad=False, step=0):
+def render(viewpoint_camera, backward_viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, visible_mask=None, retain_grad=False, step=0):
     """
     Render the scene.
 
     Background tensor (bg_color) must be on GPU!
     """
     is_training = pc.get_color_mlp.training
-
+    
     if is_training:
         xyz, color, opacity, scaling, rot, neural_opacity, mask, bit_per_param, bit_per_feat_param, bit_per_scaling_param, bit_per_offsets_param = generate_neural_gaussians(viewpoint_camera, pc, visible_mask, is_training=is_training, step=step)
+        xyz_bwd, color_bwd, opacity_bwd, scaling_bwd, rot_bwd, neural_opacity_bwd, mask_bwd, bit_per_param_bwd, bit_per_feat_param_bwd, bit_per_scaling_param_bwd, bit_per_offsets_param_bwd = generate_neural_gaussians(backward_viewpoint_camera, pc, visible_mask, is_training=is_training, step=step)    
     else:
         xyz, color, opacity, scaling, rot, time_sub = generate_neural_gaussians(viewpoint_camera, pc, visible_mask, is_training=is_training, step=step)
+        xyz_bwd, color_bwd, opacity_bwd, scaling_bwd, rot_bwd, time_sub_bwd = generate_neural_gaussians(backward_viewpoint_camera, pc, visible_mask, is_training=is_training, step=step)
 
     screenspace_points = torch.zeros_like(xyz, dtype=pc.get_anchor.dtype, requires_grad=True, device="cuda") + 0
     if retain_grad:
@@ -191,6 +193,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             screenspace_points.retain_grad()
         except:
             pass
+    screenspace_points_bwd = torch.zeros_like(xyz_bwd, dtype=pc.get_anchor.dtype, requires_grad=True, device="cuda") + 0
 
     # Set up rasterization configuration
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
@@ -223,27 +226,118 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         scales = scaling,
         rotations = rot,
         cov3D_precomp = None)
+    
+    #Set up backward rasterization configuration
+    tanfovx_bwd = math.tan(backward_viewpoint_camera.FoVx * 0.5)
+    tanfovy_bwd = math.tan(backward_viewpoint_camera.FoVy * 0.5)
+
+    raster_settings_bwd = GaussianRasterizationSettings(
+        image_height=int(backward_viewpoint_camera.image_height),
+        image_width=int(backward_viewpoint_camera.image_width),
+        tanfovx=tanfovx_bwd,
+        tanfovy=tanfovy_bwd,
+        bg=bg_color,
+        scale_modifier=scaling_modifier,
+        viewmatrix=backward_viewpoint_camera.world_view_transform,
+        projmatrix=backward_viewpoint_camera.full_proj_transform,
+        sh_degree=1,
+        campos=backward_viewpoint_camera.camera_center,
+        prefiltered=False,
+        debug=pipe.debug
+    )
+    
+    rasterizer_bwd = GaussianRasterizer(raster_settings=raster_settings_bwd)
+
+    # Rasterize visible Gaussians to image, obtain their radii (on screen).
+    rendered_image_bwd, radii_bwd = rasterizer_bwd(
+        means3D = xyz_bwd,
+        means2D = screenspace_points_bwd,
+        shs = None,
+        colors_precomp = color_bwd,
+        opacities = opacity_bwd,
+        scales = scaling_bwd,
+        rotations = rot_bwd,
+        cov3D_precomp = None)
+    
+    #img_fwd = rendered_image.permute(1, 2, 0).contiguous()
+    #img_bwd = rendered_image_bwd.permute(1, 2, 0).contiguous()
+
+    #rgb_fwd = img_fwd[..., :3]
+    #rgb_bwd = img_bwd[..., :3]
+
+    #alpha_fwd = opacitytorch.ones_like(rgb_fwd[..., :1])
+    #alpha_bwd = opacity_bwdtorch.ones_like(rgb_bwd[..., :1])
+
+    #rgb_blend = (rgb_fwd * alpha_fwd  + rgb_bwd * alpha_bwd) / (alpha_fwd + alpha_bwd + 1e-5)
+    #alpha_blend = torch.clamp(alpha_fwd + alpha_bwd, max=1.0)
+
+    #blended = torch.cat([rgb_blend, alpha_blend], dim=-1)
+    #blended = blended.permute(2,0,1).contiguous
+
+    #assert rendered_image.shape == rendered_image_bwd.shape
+    #assert rendered_image.device == rendered_image_bwd.device
+    
+    rendered_image = rendered_image.contiguous()
+    rendered_image_bwd = rendered_image_bwd.contiguous()
+
+    blended_image = 0.5 * (rendered_image + rendered_image_bwd)
+    blended_neural_opacity = 0.5 * (neural_opacity + neural_opacity_bwd)
+    blended_mask = mask | mask_bwd
+
+    def blend_parameters(mask_fwd, mask_bwd, merged_mask, param_fwd, param_bwd, size):    
+        is_vector = param_fwd.ndim == 1
+        shape = (size,) if is_vector else (size, param_fwd.shape[1])
+        full_param_fwd = torch.zeros(shape, device=param_fwd.device, dtype=param_fwd.dtype)
+        full_param_bwd = torch.zeros_like(full_param_fwd)
+        
+        full_param_fwd[mask_fwd] = param_fwd
+        full_param_bwd[mask_bwd] = param_bwd
+
+        visibility_count = mask_fwd.int() + mask_bwd.int()
+        if not is_vector:
+            visibility_count = visibility_count.unsqueeze(-1)
+        visibility_count = visibility_count.clamp(min=1)
+
+        combined_param = (full_param_fwd + full_param_bwd) / visibility_count
+        return combined_param[merged_mask]
+
+    blended_screenspace_points = blend_parameters(mask, mask_bwd, blended_mask, screenspace_points, screenspace_points_bwd, len(mask))
+    blended_screenspace_points.retain_grad()
+    blended_radii = blend_parameters(mask, mask_bwd, blended_mask, radii, radii_bwd, len(mask))
+    blended_scaling = blend_parameters(mask, mask_bwd, blended_mask, scaling, scaling_bwd, len(mask))
+
+    if is_training:
+        if bit_per_param is not None and bit_per_param_bwd is not None:
+            bit_per_param = 0.5 * (bit_per_param + bit_per_param_bwd)
+        if bit_per_feat_param is not None and bit_per_feat_param_bwd is not None:
+            bit_per_feat_param = 0.5 * (bit_per_feat_param + bit_per_feat_param_bwd)
+        if bit_per_scaling_param is not None and bit_per_scaling_param_bwd is not None:
+            bit_per_scaling_param = 0.5 * (bit_per_scaling_param + bit_per_scaling_param_bwd)
+        if bit_per_offsets_param is not None and bit_per_offsets_param_bwd is not None:
+            bit_per_offsets_param = 0.5 * (bit_per_offsets_param + bit_per_offsets_param_bwd)
+    else:
+        blended_time_sub = 0.5 * (time_sub + time_sub_bwd)
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     if is_training:
-        return {"render": rendered_image,
-                "viewspace_points": screenspace_points,
-                "visibility_filter" : radii > 0,
-                "radii": radii,
-                "selection_mask": mask,
-                "neural_opacity": neural_opacity,
-                "scaling": scaling,
+        return {"render": blended_image,
+                "viewspace_points": blended_screenspace_points,
+                "visibility_filter" : blended_radii > 0,
+                "radii": blended_radii,
+                "selection_mask": blended_mask,
+                "neural_opacity": blended_neural_opacity,
+                "scaling": blended_scaling,
                 "bit_per_param": bit_per_param,
                 "bit_per_feat_param": bit_per_feat_param,
                 "bit_per_scaling_param": bit_per_scaling_param,
                 "bit_per_offsets_param": bit_per_offsets_param,
                 }
     else:
-        return {"render": rendered_image,
-                "viewspace_points": screenspace_points,
-                "visibility_filter" : radii > 0,
-                "radii": radii,
-                "time_sub": time_sub,
+        return {"render": blended_image,
+                "viewspace_points": blended_screenspace_points,
+                "visibility_filter" : blended_radii > 0,
+                "radii": blended_radii,
+                "time_sub": blended_time_sub,
                 }
 
 
