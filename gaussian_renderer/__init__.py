@@ -169,7 +169,7 @@ def generate_neural_gaussians(viewpoint_camera, pc : GaussianModel, visible_mask
     if is_training:
         return xyz, color, opacity, scaling, rot, neural_opacity, mask, bit_per_param, bit_per_feat_param, bit_per_scaling_param, bit_per_offsets_param
     else:
-        return xyz, color, opacity, scaling, rot, time_sub
+        return xyz, color, opacity, scaling, rot, time_sub, mask
 
 
 def render(viewpoint_camera, backward_viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, visible_mask=None, retain_grad=False, step=0):
@@ -184,16 +184,23 @@ def render(viewpoint_camera, backward_viewpoint_camera, pc : GaussianModel, pipe
         xyz, color, opacity, scaling, rot, neural_opacity, mask, bit_per_param, bit_per_feat_param, bit_per_scaling_param, bit_per_offsets_param = generate_neural_gaussians(viewpoint_camera, pc, visible_mask, is_training=is_training, step=step)
         xyz_bwd, color_bwd, opacity_bwd, scaling_bwd, rot_bwd, neural_opacity_bwd, mask_bwd, bit_per_param_bwd, bit_per_feat_param_bwd, bit_per_scaling_param_bwd, bit_per_offsets_param_bwd = generate_neural_gaussians(backward_viewpoint_camera, pc, visible_mask, is_training=is_training, step=step)    
     else:
-        xyz, color, opacity, scaling, rot, time_sub = generate_neural_gaussians(viewpoint_camera, pc, visible_mask, is_training=is_training, step=step)
-        xyz_bwd, color_bwd, opacity_bwd, scaling_bwd, rot_bwd, time_sub_bwd = generate_neural_gaussians(backward_viewpoint_camera, pc, visible_mask, is_training=is_training, step=step)
+        xyz, color, opacity, scaling, rot, time_sub, mask = generate_neural_gaussians(viewpoint_camera, pc, visible_mask, is_training=is_training, step=step)
+        xyz_bwd, color_bwd, opacity_bwd, scaling_bwd, rot_bwd, time_sub_bwd, mask_bwd = generate_neural_gaussians(backward_viewpoint_camera, pc, visible_mask, is_training=is_training, step=step)
 
     screenspace_points = torch.zeros_like(xyz, dtype=pc.get_anchor.dtype, requires_grad=True, device="cuda") + 0
+    screenspace_points_copy = torch.zeros_like(xyz, dtype=pc.get_anchor.dtype, requires_grad=False, device="cuda") + 0
     if retain_grad:
         try:
             screenspace_points.retain_grad()
         except:
             pass
     screenspace_points_bwd = torch.zeros_like(xyz_bwd, dtype=pc.get_anchor.dtype, requires_grad=True, device="cuda") + 0
+    screenspace_points_bwd_copy = torch.zeros_like(xyz_bwd, dtype=pc.get_anchor.dtype, requires_grad=False, device="cuda") + 0
+    if retain_grad:
+        try:
+            screenspace_points_bwd.retain_grad()
+        except:
+            pass
 
     # Set up rasterization configuration
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
@@ -281,8 +288,19 @@ def render(viewpoint_camera, backward_viewpoint_camera, pc : GaussianModel, pipe
     rendered_image_bwd = rendered_image_bwd.contiguous()
 
     blended_image = 0.5 * (rendered_image + rendered_image_bwd)
-    blended_neural_opacity = 0.5 * (neural_opacity + neural_opacity_bwd)
     blended_mask = mask | mask_bwd
+    if is_training:
+        blended_neural_opacity = 0.5 * (neural_opacity + neural_opacity_bwd)
+        if bit_per_param is not None and bit_per_param_bwd is not None:
+            bit_per_param = 0.5 * (bit_per_param + bit_per_param_bwd)
+        if bit_per_feat_param is not None and bit_per_feat_param_bwd is not None:
+            bit_per_feat_param = 0.5 * (bit_per_feat_param + bit_per_feat_param_bwd)
+        if bit_per_scaling_param is not None and bit_per_scaling_param_bwd is not None:
+            bit_per_scaling_param = 0.5 * (bit_per_scaling_param + bit_per_scaling_param_bwd)
+        if bit_per_offsets_param is not None and bit_per_offsets_param_bwd is not None:
+            bit_per_offsets_param = 0.5 * (bit_per_offsets_param + bit_per_offsets_param_bwd)
+    else:
+        blended_time_sub = 0.5 * (time_sub + time_sub_bwd)
 
     def blend_parameters(mask_fwd, mask_bwd, merged_mask, param_fwd, param_bwd, size):    
         is_vector = param_fwd.ndim == 1
@@ -301,22 +319,9 @@ def render(viewpoint_camera, backward_viewpoint_camera, pc : GaussianModel, pipe
         combined_param = (full_param_fwd + full_param_bwd) / visibility_count
         return combined_param[merged_mask]
 
-    blended_screenspace_points = blend_parameters(mask, mask_bwd, blended_mask, screenspace_points, screenspace_points_bwd, len(mask))
-    blended_screenspace_points.retain_grad()
+    blended_screenspace_points = blend_parameters(mask, mask_bwd, blended_mask, screenspace_points_copy, screenspace_points_bwd_copy, len(mask))
     blended_radii = blend_parameters(mask, mask_bwd, blended_mask, radii, radii_bwd, len(mask))
     blended_scaling = blend_parameters(mask, mask_bwd, blended_mask, scaling, scaling_bwd, len(mask))
-
-    if is_training:
-        if bit_per_param is not None and bit_per_param_bwd is not None:
-            bit_per_param = 0.5 * (bit_per_param + bit_per_param_bwd)
-        if bit_per_feat_param is not None and bit_per_feat_param_bwd is not None:
-            bit_per_feat_param = 0.5 * (bit_per_feat_param + bit_per_feat_param_bwd)
-        if bit_per_scaling_param is not None and bit_per_scaling_param_bwd is not None:
-            bit_per_scaling_param = 0.5 * (bit_per_scaling_param + bit_per_scaling_param_bwd)
-        if bit_per_offsets_param is not None and bit_per_offsets_param_bwd is not None:
-            bit_per_offsets_param = 0.5 * (bit_per_offsets_param + bit_per_offsets_param_bwd)
-    else:
-        blended_time_sub = 0.5 * (time_sub + time_sub_bwd)
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     if is_training:
@@ -331,6 +336,14 @@ def render(viewpoint_camera, backward_viewpoint_camera, pc : GaussianModel, pipe
                 "bit_per_feat_param": bit_per_feat_param,
                 "bit_per_scaling_param": bit_per_scaling_param,
                 "bit_per_offsets_param": bit_per_offsets_param,
+                "fwd_viewspace_points": screenspace_points,
+                "bwd_viewspace_points": screenspace_points_bwd,
+                "fwd_neural_opacity": neural_opacity,
+                "bwd_neural_opacity": neural_opacity_bwd,
+                "fwd_selection_mask": mask,
+                "bwd_selection_mask": mask_bwd,
+                "fwd_visibility_filter": radii > 0,
+                "bwd_visibility_filter": radii_bwd > 0,
                 }
     else:
         return {"render": blended_image,

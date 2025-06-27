@@ -470,7 +470,7 @@ def generate_colmap_gaussians(path):
     return pcd, str(ply_path)
 
 def readVideoInfo(path, white_background, eval, ply_path, training):
-    #run()
+    #create_colmap()
     #return
     z_spacing = 0.1
     print("Generating Training Transforms")
@@ -485,12 +485,11 @@ def readVideoInfo(path, white_background, eval, ply_path, training):
     if ply_path is None:
         ply_path = os.path.join(path, "sparse/0/points3D.ply")
         ply_path_alt = os.path.join(path, "points3D.ply")
-    print("Our play path is ", ply_path )
-    print(os.path.exists(ply_path))
+    
     if not os.path.exists(ply_path):
         ply_path = ply_path_alt
         if  not os.path.exists(ply_path) or training: 
-            num_pts = 20_000
+            num_pts = 5_000
             h = 0.05
             print(f"Generating random point cloud ({num_pts})...")
 
@@ -500,8 +499,6 @@ def readVideoInfo(path, white_background, eval, ply_path, training):
         
             storePly(ply_path, xyz, SH2RGB(shs) * 255)
         
-            #print("Generating random colmap")
-            #pcd, ply_path = generate_colmap_gaussians(path)
         else: 
             print("Found existing gaussian cloud")
     else:
@@ -539,7 +536,7 @@ def downsampled_subset(images_dir: str, output_dir: str, step: int = 30) -> str:
             shutil.copy(img_path, output_dir / img_path.name)
     return str(output_dir)
 
-def run():
+def create_colmap():
     dataset_path = pathlib.Path("data/videos/ShakeNDry")
     pycolmap.verbose=True
     image_path = dataset_path / 'images'
@@ -559,6 +556,5 @@ def run():
     points_path = sparse_path / 'points3D.bin'
 
     xyz, rgb, _ = read_points3D_binary(str(points_path)) 
-    colors = rgb / 255.0
-    pcd = BasicPointCloud(points=xyz, colors=colors, normals=np.zeros_like(xyz))
+    
     storePly(str(ply_path), xyz, rgb)
