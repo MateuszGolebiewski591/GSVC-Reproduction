@@ -147,12 +147,17 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
             viewpoint_stack = scene.getTrainCameras().copy()
         
         viewpoint_cam = viewpoint_stack.pop(0)
-
+        camera_z = viewpoint_cam.T[2]
+        h = 0.1
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
 
         voxel_visible_mask = prefilter_voxel(viewpoint_cam, gaussians, pipe, background)
+        z_coords = gaussians.get_anchor[:,2]
+        mask = ((z_coords >= (camera_z - h)) & (z_coords <= (camera_z + h))).to(gaussians.get_anchor.dtype)
+        voxel_visible_mask = voxel_visible_mask | mask.bool()
+
         # voxel_visible_mask:bool = radii_pure > 0: 应该是[N_anchor]?
         retain_grad = (iteration < opt.update_until and iteration >= 0)
         render_pkg = render(viewpoint_cam, gaussians, pipe, background, visible_mask=voxel_visible_mask, retain_grad=retain_grad, step=iteration)

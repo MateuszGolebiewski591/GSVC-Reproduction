@@ -424,12 +424,7 @@ def createCameraTransforms(path, z_spacing=1, white_background=False, training=T
         cam_infos.append(CameraInfo(uid=i, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
                             image_path=image_path, image_name=image_name, width=width, height=height))
     
-    training_cam_infos = [c for i, c in enumerate(cam_infos) if i % 5 != 0]
-    test_cam_infos = [c for i, c in enumerate(cam_infos) if i % 5 == 0]
-    if training:
-        return training_cam_infos
-    else:
-        return test_cam_infos
+    return cam_infos
 
 def compute_video_bounds(cam_infos, h=0.2, num_pts=10000):
     camera_z_coordinates = [cam.T[2] for cam in cam_infos] #Work out the min and max z within which to spawn gaussians
@@ -489,7 +484,7 @@ def readVideoInfo(path, white_background, eval, ply_path, training):
     if not os.path.exists(ply_path):
         ply_path = ply_path_alt
         if  not os.path.exists(ply_path) or training: 
-            num_pts = 20_000
+            num_pts = 5_000
             h = 0.05
             print(f"Generating random point cloud ({num_pts})...")
 
