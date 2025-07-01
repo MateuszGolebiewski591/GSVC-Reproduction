@@ -342,7 +342,7 @@ def training_report(tb_writer, dataset_name, iteration, Ll1, loss, l1_loss, elap
                         errormap_list = []
 
                     t_list = []
-                    backward_cams = scene.getBackwardTestCameras()
+                    backward_cams = scene.getBackwardTestCameras().copy()
                     for idx, viewpoint in enumerate(config['cameras']):
                         backward_cam = backward_cams.pop(0)
                         torch.cuda.synchronize(); t_start = time.time()
@@ -486,14 +486,14 @@ def render_sets(args_param, dataset : ModelParams, iteration : int, pipeline : P
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda") # sets background colour
 
         if not skip_train:
-            t_train_list, _  = render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), scene.getBackwardTrainCameras(), gaussians, pipeline, background)
+            t_train_list, _  = render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras().copy(), scene.getBackwardTrainCameras().copy(), gaussians, pipeline, background)
             train_fps = 1.0 / torch.tensor(t_train_list[5:]).mean()
             logger.info(f'Train FPS: \033[1;35m{train_fps.item():.5f}\033[0m')
             if wandb is not None:
                 wandb.log({"train_fps":train_fps.item(), }) #FPS and visible count logging
 
         if not skip_test:
-            t_test_list, visible_count = render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), scene.getBackwardTestCameras(), gaussians, pipeline, background)
+            t_test_list, visible_count = render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras().copy(), scene.getBackwardTestCameras().copy(), gaussians, pipeline, background)
             test_fps = 1.0 / torch.tensor(t_test_list[5:]).mean()
             logger.info(f'Test FPS: \033[1;35m{test_fps.item():.5f}\033[0m')
             if tb_writer:
