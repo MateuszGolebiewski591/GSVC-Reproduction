@@ -156,7 +156,7 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
         voxel_visible_mask = prefilter_voxel(viewpoint_cam, gaussians, pipe, background)
         z_coords = gaussians.get_anchor[:,2]
         mask = ((z_coords >= (camera_z - h)) & (z_coords <= (camera_z + h))).to(gaussians.get_anchor.dtype)
-        voxel_visible_mask = voxel_visible_mask | mask.bool()
+        voxel_visible_mask = voxel_visible_mask & mask.bool()
 
         # voxel_visible_mask:bool = radii_pure > 0: 应该是[N_anchor]?
         retain_grad = (iteration < opt.update_until and iteration >= 0)
@@ -256,7 +256,13 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
             if (iteration in checkpoint_iterations):
                 logger.info("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
-
+        try:
+            torch.cuda.synchronize()
+        except RuntimeError as e:
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
+            print(f"Exception {e}")
+            continue 
     torch.cuda.synchronize(); t_end = time.time()
     logger.info("\n Total Training time: {}".format(t_end-t_start-log_time_sub))
 
@@ -333,7 +339,12 @@ def training_report(tb_writer, dataset_name, iteration, Ll1, loss, l1_loss, elap
 
                     for idx, viewpoint in enumerate(config['cameras']):
                         torch.cuda.synchronize(); t_start = time.time()
+                        camera_z = viewpoint.T[2]
+                        h = 0.1
                         voxel_visible_mask = prefilter_voxel(viewpoint, scene.gaussians, *renderArgs)
+                        z_coords = scene.gaussians.get_anchor[:,2]
+                        mask = ((z_coords >= (camera_z - h)) & (z_coords <= (camera_z + h))).to(scene.gaussians.get_anchor.dtype)
+                        voxel_visible_mask = voxel_visible_mask & mask.bool()
                         # image = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs, visible_mask=voxel_visible_mask)["render"], 0.0, 1.0)
                         render_output = renderFunc(viewpoint, scene.gaussians, *renderArgs, visible_mask=voxel_visible_mask)
                         image = torch.clamp(render_output["render"], 0.0, 1.0)
@@ -406,6 +417,11 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
 
         torch.cuda.synchronize(); t_start = time.time()
         voxel_visible_mask = prefilter_voxel(view, gaussians, pipeline, background)
+        z_coords = gaussians.get_anchor[:,2]
+        camera_z = view.T[2]
+        h = 0.1
+        mask = ((z_coords >= (camera_z - h)) & (z_coords <= (camera_z + h))).to(gaussians.get_anchor.dtype)
+        voxel_visible_mask = voxel_visible_mask & mask.bool()
         render_pkg = render(view, gaussians, pipeline, background, visible_mask=voxel_visible_mask)
         torch.cuda.synchronize(); t_end = time.time()
 
@@ -588,6 +604,8 @@ def get_logger(path): # Logs both to terminal and to a file
 
 def main(argv=None):
     # Set up command line argument parser
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
     parser = ArgumentParser(description="Training script parameters")
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
