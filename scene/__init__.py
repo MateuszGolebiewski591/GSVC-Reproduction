@@ -41,6 +41,8 @@ class Scene: #Defines a scene that takes in a Gaussian model object which stores
 
         self.train_cameras = {}
         self.test_cameras = {}
+        self.backward_train_cameras = {}
+        self.backward_test_cameras = {}
 
         self.x_bound = None
         #if os.path.exists(os.path.join(args.source_path, "sparse")): #Realises scene format (COLMAP or Blender)
@@ -84,8 +86,10 @@ class Scene: #Defines a scene that takes in a Gaussian model object which stores
         for resolution_scale in resolution_scales: #Load camera data for each resolution
             print("Loading Training Cameras")
             self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args, is_training=False)
+            self.backward_train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.backward_train_cameras, resolution_scale, args, is_training=False)
             print("Loading Test Cameras")
-            self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args, is_training=False)
+            self.test_cameras[resolution_scale] = self.train_cameras[resolution_scale]
+            self.backward_test_cameras[resolution_scale] = self.backward_train_cameras[resolution_scale]
 
         if self.loaded_iter:#load or initialise gaussians
             self.gaussians.load_ply_sparse_gaussian(os.path.join(self.model_path, 
@@ -109,3 +113,9 @@ class Scene: #Defines a scene that takes in a Gaussian model object which stores
 
     def getTestCameras(self, scale=1.0):
         return self.test_cameras[scale]
+    
+    def getBackwardTrainCameras(self, scale=1.0):
+        return self.backward_train_cameras[scale]
+    
+    def getBackwardTestCameras(self, scale=1.0):
+        return self.backward_test_cameras[scale]
