@@ -150,12 +150,13 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
             
             viewpoint_cam = viewpoint_stack.pop(0)
             backward_viewpoint_cam = backward_viewpoint_stack.pop(0)
-            camera_z = viewpoint_cam.T[2]
-            h = 0.1
+            
             # Render
             if (iteration - 1) == debug_from:
                 pipe.debug = True
-
+                
+            camera_z = viewpoint_cam.T[2]
+            h = args_param.h
             z_coords = gaussians.get_anchor[:,2]
             mask = ((z_coords >= (camera_z - h)) & (z_coords <= (camera_z + h))).to(gaussians.get_anchor.dtype)
             forward_voxel_visible_mask = prefilter_voxel(viewpoint_cam, gaussians, pipe, background) & mask.bool()
