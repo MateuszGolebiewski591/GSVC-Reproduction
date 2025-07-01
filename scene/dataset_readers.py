@@ -469,7 +469,7 @@ def generate_colmap_gaussians(path):
     storePly(str(ply_path), xyz, rgb)
     return pcd, str(ply_path)
 
-def readVideoInfo(path, white_background, eval, ply_path, training):
+def readVideoInfo(path, white_background, eval, ply_path, training, h=0.1, num_pts=500):
     #create_colmap()
     #return
     z_spacing = 0.1
@@ -488,15 +488,11 @@ def readVideoInfo(path, white_background, eval, ply_path, training):
     
     if not os.path.exists(ply_path):
         ply_path = ply_path_alt
-        if  not os.path.exists(ply_path) or training: 
-            num_pts = 300
-            h = 0.1
+        if  not os.path.exists(ply_path) or training:     
             print(f"Generating random point cloud ({num_pts})...")
-
             xyz = compute_video_bounds(train_cam_infos, h, num_pts)
             shs = np.random.random((num_pts, 3)) / 255.0
             pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
-        
             storePly(ply_path, xyz, SH2RGB(shs) * 255)
         
         else: 

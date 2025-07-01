@@ -101,7 +101,7 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
         log2_hashmap_size=args_param.log2,
         log2_hashmap_size_2D=args_param.log2_2D,
     )
-    scene = Scene(dataset, gaussians, ply_path=ply_path)
+    scene = Scene(dataset, gaussians, ply_path=ply_path, h=args_param.h, num_gaussians=args_param.num_gaussians)
     gaussians.update_anchor_bound()
 
     gaussians.training_setup(opt)
@@ -156,12 +156,11 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
             if (iteration - 1) == debug_from:
                 pipe.debug = True
 
-            forward_voxel_visible_mask = prefilter_voxel(viewpoint_cam, gaussians, pipe, background)
             z_coords = gaussians.get_anchor[:,2]
-            mask = ((z_coords >= (camera_z - h)) & (z_coords <= (camera_z + h))).to(gaussians.get_anchor.dtype) 
-
-            backward_voxel_visible_mask = prefilter_voxel(backward_viewpoint_cam, gaussians, pipe, background)
-            voxel_visible_mask = (forward_voxel_visible_mask | backward_voxel_visible_mask) & mask.bool()
+            mask = ((z_coords >= (camera_z - h)) & (z_coords <= (camera_z + h))).to(gaussians.get_anchor.dtype)
+            forward_voxel_visible_mask = prefilter_voxel(viewpoint_cam, gaussians, pipe, background) & mask.bool()
+            backward_voxel_visible_mask = prefilter_voxel(backward_viewpoint_cam, gaussians, pipe, background) & mask.bool()
+            voxel_visible_mask = forward_voxel_visible_mask | backward_voxel_visible_mask
             # voxel_visible_mask:bool = radii_pure > 0: 应该是[N_anchor]?
             
             retain_grad = (iteration < opt.update_until and iteration >= 0)
@@ -491,7 +490,7 @@ def render_sets(args_param, dataset : ModelParams, iteration : int, pipeline : P
             log2_hashmap_size_2D=args_param.log2_2D,
             decoded_version=run_codec,
         )
-        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, training=False)# loads scene with trained gaussians
+        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, training=False, h=args_param.h, num_gaussians=args_param.num_gaussians)# loads scene with trained gaussians
         gaussians.eval()
         if x_bound_min is not None:
             gaussians.x_bound_min = x_bound_min
@@ -645,6 +644,8 @@ def main(argv=None):
     parser.add_argument("--log2_2D", type=int, default = 15)
     parser.add_argument("--n_features", type=int, default = 4)
     parser.add_argument("--lmbda", type=float, default = 0.001)
+    parser.add_argument("--h", type=float, default = 0.1)
+    parser.add_argument("--num_gaussians", type=int, default = 500)
     args = parser.parse_args(argv)
     args.save_iterations.append(args.iterations)
 
