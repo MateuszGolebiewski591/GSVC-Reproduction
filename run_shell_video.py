@@ -11,7 +11,7 @@ for lmbda in [0.004]:  # Optionally, you can try: 0.003, 0.002, 0.001, 0.0005
 "--lod", "0",
 "--voxel_size", "0.001",
 "--update_init_factor", "4",
-"--iterations", "10",
+"--iterations", "30000",
 "-m", "outputs/videos/carSubset/0.004",
 "--lmbda", "0.004",
 "--h", "0.1",
