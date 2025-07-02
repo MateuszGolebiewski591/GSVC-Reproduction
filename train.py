@@ -28,7 +28,8 @@ import time
 from os import makedirs
 import shutil, pathlib
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 import torchvision.transforms.functional as tf
 # from lpipsPyTorch import lpips
 # import lpips
