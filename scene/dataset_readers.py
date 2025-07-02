@@ -424,7 +424,7 @@ def createCameraTransforms(path, z_spacing=1, white_background=False, training=T
         cam_infos.append(CameraInfo(uid=i, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
                             image_path=image_path, image_name=image_name, width=width, height=height))
     
-    cam_infos
+    return cam_infos
 
 def compute_video_bounds(cam_infos, h=0.2, num_pts=10000):
     camera_z_coordinates = [cam.T[2] for cam in cam_infos] #Work out the min and max z within which to spawn gaussians
