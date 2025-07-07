@@ -484,12 +484,21 @@ def readVideoInfo(path, white_background, eval, ply_path, training):
     if not os.path.exists(ply_path):
         ply_path = ply_path_alt
         if  not os.path.exists(ply_path) or training: 
-            num_pts = 500
+            num_pts = 2500
             h = 0.1
             print(f"Generating random point cloud ({num_pts})...")
 
-            xyz = compute_video_bounds(train_cam_infos, h, num_pts)
-            shs = np.random.random((num_pts, 3)) / 255.0
+            full_xyz = compute_video_bounds(train_cam_infos, h, num_pts)
+            full_shs = np.random.random((num_pts, 3)) / 255.0
+            initial_split = int(0.2 * num_pts)
+            xyz = full_xyz[:initial_split]
+            shs = full_shs[:initial_split]
+            delayed_xyz = full_xyz[initial_split:]
+            #delayed_shs = full_shs[initial_split:]
+            
+            np.save(os.path.join(path, "xyz_delayed.npy"), delayed_xyz)
+            #np.save(os.path.join(path, "shs_delayed.npy"), delayed_shs)
+
             pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
         
             storePly(ply_path, xyz, SH2RGB(shs) * 255)

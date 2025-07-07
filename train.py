@@ -44,6 +44,8 @@ from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 from utils.encodings import get_binary_vxl_size
+from utils.sh_utils import SH2RGB
+from scene.dataset_readers import storePly
 
 # torch.set_num_threads(32)
 # lpips_fn = lpips.LPIPS(net='vgg').to('cuda')
@@ -88,6 +90,9 @@ def saveRuntimeCode(dst: str) -> None:
 def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, wandb=None, logger=None, ply_path=None):
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
+    delay_injection = False
+    skip_turn = False
+    inject = False
 
     gaussians = GaussianModel( #initialise model and scene
         dataset.feat_dim,
@@ -118,7 +123,38 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
     first_iter += 1
     torch.cuda.synchronize(); t_start = time.time()
     log_time_sub = 0
+    first_injection = (opt.iterations/5)
     for iteration in range(first_iter, opt.iterations + 1): # main training loop 
+        with torch.no_grad():
+            if iteration < opt.update_until and iteration > opt.start_stat and iteration > opt.update_from and iteration % opt.update_interval == 0:
+                if iteration != 0 and iteration % first_injection == 0 and iteration != opt.iterations:
+                    delay_injection = True
+                    skip_turn = True
+            elif iteration != 0 and iteration % first_injection == 0 and iteration != opt.iterations:
+                inject = True 
+            if delay_injection and not skip_turn:
+                inject = True 
+                delay_injection = False 
+            if delay_injection and skip_turn: 
+                inject = False 
+                skip_turn = False
+            if inject:#anchor injection  
+                checkpoint  = iteration // first_injection
+                xyz_delayed = torch.from_numpy(np.load(os.path.join(args_param.source_path, "xyz_delayed.npy"))).float().cuda()
+                number_of_gaussians = len(xyz_delayed)
+                number_to_inject = (number_of_gaussians // 4)
+                a = int(number_to_inject * (checkpoint - 1))
+                b = number_to_inject + a 
+                b = int(min(b, number_of_gaussians))
+                xyz_subset = xyz_delayed[a:b]
+                # or use some placeholder if you're not using SH
+                print(f"injecting {len(xyz_subset)} gaussians")
+                gaussians.inject_gaussians(xyz_subset)
+                #gaussians._resize_internal_buffers()
+                gaussians.register_new_gaussians(len(xyz_subset))
+                inject = False
+
+
         # network gui not available in scaffold-gs yet
         if network_gui.conn == None:
             network_gui.try_connect()
@@ -225,6 +261,23 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
             torch.cuda.synchronize(); t_end_log = time.time()
             t_log = t_end_log - t_start_log
             log_time_sub += t_log
+            
+            
+            #first_injection = (opt.iterations/5)
+            #anchor injection
+            #if iteration != 0 and iteration % first_injection == 0 and iteration != opt.iterations:
+            #    checkpoint  = iteration // first_injection
+           #     xyz_delayed = torch.from_numpy(np.load(os.path.join(args_param.source_path, "xyz_delayed.npy"))).float().cuda()
+            #    number_of_gaussians = len(xyz_delayed)
+            #    number_to_inject = (number_of_gaussians // 4)
+            #    a = int(number_to_inject * (checkpoint - 1))
+            #    b = number_to_inject + a 
+            #    b = int(min(b, number_of_gaussians))
+             #   xyz_subset = xyz_delayed[a:b]
+            #      # or use some placeholder if you're not using SH
+            #    print(f"injecting {len(xyz_subset)} gaussians")
+            #    gaussians.inject_gaussians(xyz_subset)
+            #    gaussians._resize_internal_buffers()
 
             # densification
             if iteration < opt.update_until and iteration > opt.start_stat:
@@ -240,9 +293,9 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
                     if iteration > opt.update_from and iteration % opt.update_interval == 0:
                         gaussians.adjust_anchor(check_interval=opt.update_interval, success_threshold=opt.success_threshold, grad_threshold=opt.densify_grad_threshold, min_opacity=opt.min_opacity)
             elif iteration == opt.update_until:
-                del gaussians.opacity_accum
-                del gaussians.offset_gradient_accum
-                del gaussians.offset_denom
+                #del gaussians.opacity_accum
+                #del gaussians.offset_gradient_accum
+                #del gaussians.offset_denom
                 torch.cuda.empty_cache()
 
             if iteration < opt.iterations:
@@ -251,6 +304,12 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
             if (iteration in checkpoint_iterations):
                 logger.info("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
+    ply_path = os.path.join(args_param.source_path, "points3D.ply")
+    gaussians.eval()
+    with torch.no_grad():
+        xyz = gaussians.get_anchor.detach().cpu().numpy()
+        rgb = np.ones_like(xyz) * 128
+        storePly(ply_path, xyz, rgb)
 
     torch.cuda.synchronize(); t_end = time.time()
     logger.info("\n Total Training time: {}".format(t_end-t_start-log_time_sub))

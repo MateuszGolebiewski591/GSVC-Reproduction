@@ -1351,3 +1351,100 @@ class GaussianModel(nn.Module): #This is the main nerual model
 
         return log_info
 
+    def inject_gaussians(self, new_xyz: np.ndarray):
+        assert new_xyz.shape[1] == 3
+        new_xyz_tensor = torch.tensor(new_xyz, dtype=torch.float32).cuda()
+
+        # === Use same scaling method ===
+        dist2 = torch.clamp_min(distCUDA2(new_xyz_tensor).float().cuda(), 0.0000001)
+        new_scaling = torch.log(torch.sqrt(dist2))[..., None].repeat(1, 6)
+
+        new_offsets = torch.zeros((new_xyz_tensor.shape[0], self.n_offsets, 3), dtype=torch.float32, device="cuda")
+        new_masks = torch.ones((new_xyz_tensor.shape[0], self.n_offsets, 1), dtype=torch.float32, device="cuda")
+        new_feats = torch.zeros((new_xyz_tensor.shape[0], self.feat_dim), dtype=torch.float32, device="cuda")
+        new_rots = torch.zeros((new_xyz_tensor.shape[0], 4), dtype=torch.float32, device="cuda")
+        new_rots[:, 0] = 1.0
+        new_opacities = inverse_sigmoid(0.1 * torch.ones((new_xyz_tensor.shape[0], 1), dtype=torch.float32, device="cuda"))
+
+        # === Add to model tensors ===
+        self._anchor = nn.Parameter(torch.cat([self.get_anchor.detach(), new_xyz_tensor], dim=0).requires_grad_(True))
+        self._offset = nn.Parameter(torch.cat([self._offset.detach(), new_offsets], dim=0).requires_grad_(True))
+        self._mask = nn.Parameter(torch.cat([self._mask.detach(), new_masks], dim=0).requires_grad_(True))
+        self._anchor_feat = nn.Parameter(torch.cat([self._anchor_feat.detach(), new_feats], dim=0).requires_grad_(True))
+        self._scaling = nn.Parameter(torch.cat([self._scaling.detach(), new_scaling], dim=0).requires_grad_(True))
+        self._rotation = nn.Parameter(torch.cat([self._rotation.detach(), new_rots], dim=0).requires_grad_(False))
+        self._opacity = nn.Parameter(torch.cat([self._opacity.detach(), new_opacities], dim=0).requires_grad_(False))
+
+        # Reset radii
+        self.max_radii2D = torch.zeros((self.get_anchor.shape[0]), device="cuda")
+
+        print(f"Injected {new_xyz.shape[0]} new anchors. Total: {self.get_anchor.shape[0]}")
+
+    def _resize_internal_buffers(self):
+        N = self.get_anchor.shape[0]
+        NO = N * self.n_offsets 
+
+        def resize(name, buffer, target_shape, dtype=None):
+            if buffer.shape[0] < target_shape:
+                pad_shape = (target_shape - buffer.shape[0], *buffer.shape[1:])
+                pad = torch.zeros(pad_shape, dtype=dtype or buffer.dtype, device=buffer.device)
+                print(f"[Resize] Buffer '{name}' resized from {buffer.shape[0]} to {target_shape}")
+                return torch.cat([buffer, pad], dim=0)
+            return buffer
+
+        self.offset_gradient_accum = resize('offset_gradient_accum', self.offset_gradient_accum, NO, torch.float32)
+        self.offset_denom = resize('offset_denom', self.offset_denom, NO, torch.int32)
+        self.anchor_demon = resize('anchor_demon', self.anchor_demon, N, torch.float32)
+        self.opacity_accum = resize('opacity_accum', self.opacity_accum, N, torch.float32)
+
+    def register_new_gaussians(self, num_new: int):
+        n_offsets = self.n_offsets 
+        device = self._anchor.device 
+        n_existing = self.get_anchor.shape[0] - num_new
+        new_total = self.get_anchor.shape[0]
+
+        print(f"[Register] Registering {num_new} new Gaussians (Total: {new_total})")
+
+        # --- Resize training buffers ---
+        def resize(name, target_shape):
+            buf = getattr(self, name)
+            if buf.shape[0] < target_shape[0]:
+                pad_shape = list(target_shape)
+                pad_shape[0] = target_shape[0] - buf.shape[0]
+                pad_tensor = torch.zeros(pad_shape, device=device, dtype=buf.dtype)
+                setattr(self, name, torch.cat([buf, pad_tensor], dim=0))
+                print(f"[Resize] Buffer '{name}' resized from {buf.shape[0]} to {target_shape[0]}")
+
+        # Anchor-level buffers (N x 1)
+        resize("anchor_demon", (new_total, 1))
+        resize("opacity_accum", (new_total, 1))
+
+        # Offset-level buffers (N * n_offsets x 1)
+        resize("offset_denom", (new_total * n_offsets, 1))
+        resize("offset_gradient_accum", (new_total * n_offsets, 1))
+
+        # Max radii per Gaussian
+        self.max_radii2D = torch.zeros((new_total), device=device)
+
+        # --- Register tensors with optimizer ---
+        optim_dict = {
+            "anchor": self._anchor[n_existing:],
+            "scaling": self._scaling[n_existing:],
+            "rotation": self._rotation[n_existing:],
+            "anchor_feat": self._anchor_feat[n_existing:],
+            "offset": self._offset[n_existing:],
+            "mask": self._mask[n_existing:],
+            "opacity": self._opacity[n_existing:],
+        }
+
+        new_optim_tensors = self.cat_tensors_to_optimizer(optim_dict)
+
+        # Update internal references
+        self._anchor = new_optim_tensors["anchor"]
+        self._scaling = new_optim_tensors["scaling"]
+        self._rotation = new_optim_tensors["rotation"]
+        self._anchor_feat = new_optim_tensors["anchor_feat"]
+        self._offset = new_optim_tensors["offset"]
+        self._mask = new_optim_tensors["mask"]
+        self._opacity = new_optim_tensors["opacity"]
+
