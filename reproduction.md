@@ -12,7 +12,17 @@ Due to previous dependencies no longer working with one another, we began by upd
 The original HAC codebase can be found at https://github.com/YihangChen-ee/HAC
 
 ## Commit history:
-Base commit after adaptation - 7e891b17141534d797afe5e7c5c0c0e15f1000a7
+Base commit after adaptation - 7e891b17141534d797afe5e7c5c0c0e15f1000a7 
+
+Generation of random gaussians for previously colmap dependent data - 6a386d49a919d25050f32b3e35ed4a49262a2f59
+
+Support for any video represented as a sequence of PNGs implemented - 164f3c46cfde89ba75fbbac58b8b65208e6d1438
+
+Implemented double pass render - 8b048586534ef794c118ff8385136a71e3fd81eb
+
+Added a mask that defines which gaussians lie within the toast-like sliding window - 01a00d1dff2d3c77bd21d677d1304866c3311e18
+
+Fully working toast-like sliding window - c387f05a5351a2d5c44c3f987831377cab9decc8
 
 ## Installation
 
@@ -74,33 +84,30 @@ First, create a ```data/``` folder inside the project path by
 mkdir data
 ```
 
-The data structure will be organised as follows:
+The data should be structured as follows:
 
 ```
 data/
 ├── dataset_name
 │   ├── scene1/
 │   │   ├── images
-│   │   │   ├── IMG_0.jpg
-│   │   │   ├── IMG_1.jpg
-│   │   │   ├── ...
-│   │   ├── sparse/
-│   │       └──0/
+│   │   |   ├── IMG_0.jpg
+│   │   |   ├── IMG_1.jpg
+│   │   |   ├── ...
+│   │   |    
 │   ├── scene2/
 │   │   ├── images
-│   │   │   ├── IMG_0.jpg
-│   │   │   ├── IMG_1.jpg
-│   │   │   ├── ...
-│   │   ├── sparse/
-│   │       └──0/
+│   │   |   ├── IMG_0.jpg
+│   │   |   ├── IMG_1.jpg
+│   │   |   ├── ...
+│   │   |
 ...
 ```
 
- - For instance: `./data/blending/drjohnson/`
- - For instance: `./data/bungeenerf/amsterdam/`
- - For instance: `./data/mipnerf360/bicycle/`
- - For instance: `./data/nerf_synthetic/chair/`
- - For instance: `./data/tandt/train/`
+ - For instance: `./data/HEVC-CTC/BasketballDrive_1920x1080_50/`
+ - For instance: `./data/JVET-CTC/B1BQTerrace/`
+ - For instance: `./data/MCL-JCV/videoSRC01/`
+ - For instance: `./data/UVG/Beauty/`
 
 
 ### Public Data (We follow suggestions from [Scaffold-GS](https://github.com/city-super/Scaffold-GS))
@@ -111,18 +118,14 @@ data/
 
 ### Custom Data
 
-For custom data, you should process the image sequences with [Colmap](https://colmap.github.io/) to obtain the SfM points and camera poses. Then, place the results into ```data/``` folder.
+For custom data, you should ensure the image sequence is named in order and placed in an images directory as shown above. 
 
 ## Training
 
-To train scenes, we provide the following training scripts: 
- - Tanks&Temples: ```run_shell_tnt.py```
- - MipNeRF360: ```run_shell_mip360.py```
- - BungeeNeRF: ```run_shell_bungee.py```
- - Deep Blending: ```run_shell_db.py```
- - Nerf Synthetic: ```run_shell_blender.py```
+To train scenes, we provide the following training script: 
+ - Modify for your dataset: ```run_shell_video.py```
 
- run them with 
+ run with 
  ```
  python run_shell_xxx.py
  ```
