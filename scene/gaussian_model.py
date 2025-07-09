@@ -768,7 +768,7 @@ class GaussianModel(nn.Module): #This is the main nerual model
         combined_mask[anchor_visible_mask] = offset_selection_mask
         temp_mask = combined_mask.clone()
         combined_mask[temp_mask] = update_filter
-
+        
         grad_norm = torch.norm(viewspace_point_tensor.grad[update_filter, :2], dim=-1, keepdim=True)
 
         self.offset_gradient_accum[combined_mask] += grad_norm
