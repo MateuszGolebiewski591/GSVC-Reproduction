@@ -16,11 +16,16 @@ from utils.graphics_utils import getWorld2View2, getProjectionMatrix
 
 class Camera(nn.Module):
     def __init__(self, colmap_id, R, T, FoVx, FoVy, image, gt_alpha_mask,
-                 image_name, uid,
+                 image_name, uid, is_training,
                  trans=np.array([0.0, 0.0, 0.0]), scale=1.0, data_device = "cuda"
                  ):
         super(Camera, self).__init__()
 
+        #T = np.array([-1.69236190e-08, 2.27024445e-08, 4.03112944e+00])
+        #R = np.array([[-4.67515943e-01, -5.28597637e-01, 7.08529153e-01],
+        #             [-8.83984561e-01, 2.79561241e-01, -3.74722237e-01],
+        #             [-3.62673686e-09, -8.01517463e-01, 4.03112944e+00]])
+       
         self.uid = uid
         self.colmap_id = colmap_id
         self.R = R
@@ -28,6 +33,7 @@ class Camera(nn.Module):
         self.FoVx = FoVx
         self.FoVy = FoVy
         self.image_name = image_name
+        self.is_training = is_training
 
         try:
             self.data_device = torch.device(data_device)
@@ -52,7 +58,7 @@ class Camera(nn.Module):
         self.scale = scale
 
         self.world_view_transform = torch.tensor(getWorld2View2(R, T, trans, scale)).transpose(0, 1).cuda()
-        self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy).transpose(0,1).cuda()
+        self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy, is_training=is_training).transpose(0,1).cuda()
         self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0)
         self.camera_center = self.world_view_transform.inverse()[3, :3]
 

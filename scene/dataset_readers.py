@@ -24,6 +24,8 @@ from pathlib import Path
 from plyfile import PlyData, PlyElement
 from utils.sh_utils import SH2RGB
 from scene.gaussian_model import BasicPointCloud
+import pycolmap
+import pathlib
 
 class CameraInfo(NamedTuple):
     uid: int
@@ -139,6 +141,34 @@ def storePly(path, xyz, rgb):
     ply_data = PlyData([vertex_element])
     ply_data.write(path)
 
+def compute_scene_bounds(bin_path, margin): 
+    try:
+        xyz_colmap, _, _ = read_points3D_binary(bin_path)
+    except:
+        pass 
+    if xyz_colmap is not None:
+        min_bound = xyz_colmap.min(axis=0)
+        max_bound = xyz_colmap.max(axis=0)
+        print("Using bounds from COLMAP using cloud", min_bound, ",", max_bound)
+    return min_bound - margin, max_bound + margin   
+
+def estimate_focus_center(cam_infos):
+    centers = []
+    directions = []
+    for cam in cam_infos:
+        centers.append(cam.T)
+        R = cam.R 
+        forward = -R[2,:]
+        directions.append(forward)
+    centers = np.stack(centers)
+    directions = np.stack(directions)
+    avg_center = centers.mean(axis=0)
+    avg_direction = directions.mean(axis=0)
+    avg_direction /= np.linalg.norm(avg_direction)
+    object_center = avg_center + 1.0 * avg_direction
+    print("Estimated center: ", object_center)
+    return object_center
+
 def readColmapSceneInfo(path, images, eval, lod, llffhold=8):
     try:
         cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.bin")
@@ -177,20 +207,26 @@ def readColmapSceneInfo(path, images, eval, lod, llffhold=8):
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
     ply_path = os.path.join(path, "sparse/0/points3D.ply")
-    bin_path = os.path.join(path, "sparse/0/points3D.bin")
-    txt_path = os.path.join(path, "sparse/0/points3D.txt")
-    if not os.path.exists(ply_path):
-        print("Converting point3d.bin to .ply, will happen only the first time you open the scene.")
-        try:
-            xyz, rgb, _ = read_points3D_binary(bin_path)
-        except:
-            xyz, rgb, _ = read_points3D_text(txt_path)
-        storePly(ply_path, xyz, rgb)
-    # try:
-    print(f'start fetching data from ply file')
-    pcd = fetchPly(ply_path)
-    # except:
-    #     pcd = None
+    bin_path = os.path.join(path, "sparse/0", "points3D.bin")
+    low, high = compute_scene_bounds(bin_path, margin=0.5)
+    
+    num_pts = 10_000
+    num_background = 7000
+    num_center = 3_000
+    print(f"Generating random point cloud ({num_pts})...")
+    center = estimate_focus_center(cam_infos)    
+    # We create random points
+    xyz_center = np.random.normal(loc=center,size=(num_center, 3))
+    xyz_background = np.random.uniform(low=low, high=high, size=(num_background, 3))
+    xyz = np.concatenate([xyz_center, xyz_background], axis=0)
+    shs = np.random.random((num_pts, 3)) / 255.0
+    pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
+    storePly(ply_path, xyz, SH2RGB(shs) * 255)
+
+    try:
+        pcd = fetchPly(ply_path)
+    except:
+        pcd = None
 
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
@@ -329,17 +365,17 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png", ply_pa
     nerf_normalization = getNerfppNorm(train_cam_infos)
     if ply_path is None:
         ply_path = os.path.join(path, "points3d.ply")
-    if not os.path.exists(ply_path):
-        # Since this data set has no colmap data, we start with random points
-        num_pts = 10_000
-        print(f"Generating random point cloud ({num_pts})...")
+    
+    # Since this data set has no colmap data, we start with random points
+    num_pts = 10_000
+    print(f"Generating random point cloud ({num_pts})...")
         
-        # We create random points inside the bounds of the synthetic Blender scenes
-        xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3
-        shs = np.random.random((num_pts, 3)) / 255.0
-        pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
+    # We create random points inside the bounds of the synthetic Blender scenes
+    xyz = np.random.random((num_pts, 3)) * 2.6 - 1.3
+    shs = np.random.random((num_pts, 3)) / 255.0
+    pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
 
-        storePly(ply_path, xyz, SH2RGB(shs) * 255)
+    storePly(ply_path, xyz, SH2RGB(shs) * 255)
     try:
         pcd = fetchPly(ply_path)
     except:
@@ -352,8 +388,169 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png", ply_pa
                            ply_path=ply_path)
     return scene_info
 
+def createCameraTransforms(path, z_spacing=1, white_background=False, training=True):
+    images_folder = os.path.join(path, "images")
+    image_files = sorted(os.listdir(images_folder))
+    cam_infos = [] 
+
+    progress_bar = tqdm(image_files, desc="Loading dataset")
+    ct = 0
+
+    for i, image_name in enumerate(image_files):#progress bar visual
+        if i % 10 == 0:
+            progress_bar.set_postfix({"num": Fore.YELLOW+f"{ct}/{len(image_files)}"+Style.RESET_ALL})
+            progress_bar.update(10)
+        if i == len(image_files) - 1:
+            progress_bar.close()
+        ct += 1
+
+        image_path = os.path.join(images_folder, image_name)
+        image = Image.open(image_path)
+        width, height = image.size
+
+        if image.mode == "RGBA": #converts image to right format depending on whether it is RGB or RGBA
+            im_data = np.array(image.convert("RGBA"))
+            bg = np.array([1,1,1]) if white_background else np.array([0, 0, 0])
+            norm_data = im_data / 255.0
+            arr = norm_data[:,:,:3] * norm_data[:, :, 3:4] + bg * (1 - norm_data[:, :, 3:4])
+            image = Image.fromarray(np.array(arr*255.0, dtype=np.byte), "RGB")
+        else:
+            image = image.convert("RGB")
+
+        R = np.eye(3) #All cameras face the z axis
+        T = np.array([0.0, 0.0, i * z_spacing]) #All cameras are at [0,0,z] where z is time
+        FovX = np.radians(50.0)
+        FovY = 2 * np.arctan(np.tan(FovX / 2) * height / width)
+        cam_infos.append(CameraInfo(uid=i, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
+                            image_path=image_path, image_name=image_name, width=width, height=height))
+    
+    return cam_infos
+
+def compute_video_bounds(cam_infos, h=0.2, num_pts=10000):
+    camera_z_coordinates = [cam.T[2] for cam in cam_infos] #Work out the min and max z within which to spawn gaussians
+    z_min = min(camera_z_coordinates) - h 
+    z_max = max(camera_z_coordinates) + h
+
+    y_depth = np.tan(cam_infos[0].FovY / 2) * h #uses the view depth h and the fov to work out how far to distribute gaussians so the whole image fits on the screen and is evenly filled with gaussians
+    x_depth = np.tan(cam_infos[0].FovX / 2) * h
+    x_min, x_max = -x_depth, x_depth 
+    y_min, y_max = -y_depth, y_depth 
+
+    x = np.random.uniform(x_min, x_max, size=num_pts)
+    y = np.random.uniform(y_min, y_max, size=num_pts)
+    z = np.random.uniform(z_min, z_max, size=num_pts)
+    xyz = np.stack([x, y, z], axis=1)
+    return xyz
+
+def generate_colmap_gaussians(path):
+    dataset_path = pathlib.Path(path)
+    image_path = dataset_path / 'images'
+    output_path = dataset_path / 'sparse'
+    sparse_path = output_path / '0'
+    db_path = dataset_path / 'database.db'
+    ply_path = sparse_path / 'points3D.ply'
+
+    pycolmap.extract_features(db_path, image_path)
+    pycolmap.match_exhaustive(db_path)
+    maps = pycolmap.incremental_mapping(db_path, image_path, output_path)
+    maps[0].write(output_path)
+
+    points_path = sparse_path / 'points3D.bin'
+
+    xyz, rgb, _ = read_points3D_binary(str(points_path)) 
+    colors = rgb / 255.0
+    pcd = BasicPointCloud(points=xyz, colors=colors, normals=np.zeros_like(xyz))
+    storePly(str(ply_path), xyz, rgb)
+    return pcd, str(ply_path)
+
+def readVideoInfo(path, white_background, eval, ply_path, training):
+    #run()
+    #return
+    z_spacing = 0.1
+    print("Generating Training Transforms")
+    train_cam_infos = createCameraTransforms(path, z_spacing=z_spacing, white_background=white_background, training=True)
+    print("Generating Test Transforms")
+    test_cam_infos =  createCameraTransforms(path, z_spacing=z_spacing, white_background=white_background, training=False)
+    if not eval:
+        train_cam_infos.extend(test_cam_infos)
+        test_cam_infos = []
+
+    nerf_normalization = getNerfppNorm(train_cam_infos)
+    if ply_path is None:
+        ply_path = os.path.join(path, "sparse/0/points3D.ply")
+        ply_path_alt = os.path.join(path, "points3D.ply")
+    print("Our play path is ", ply_path )
+    print(os.path.exists(ply_path))
+    if not os.path.exists(ply_path):
+        ply_path = ply_path_alt
+        if  not os.path.exists(ply_path) or training: 
+            num_pts = 500
+            h = 0.1
+            print(f"Generating random point cloud ({num_pts})...")
+
+            xyz = compute_video_bounds(train_cam_infos, h, num_pts)
+            shs = np.random.random((num_pts, 3)) / 255.0
+            pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
+        
+            storePly(ply_path, xyz, SH2RGB(shs) * 255)
+        
+            #print("Generating random colmap")
+            #pcd, ply_path = generate_colmap_gaussians(path)
+        else: 
+            print("Found existing gaussian cloud")
+    else:
+        print("Pre-existing Colmap Found")
+
+    try:
+        pcd = fetchPly(ply_path)
+    except:
+        pcd = None
+
+    scene_info =  SceneInfo(point_cloud=pcd,
+                            train_cameras=train_cam_infos,
+                            test_cameras=test_cam_infos,
+                            nerf_normalization=nerf_normalization,
+                            ply_path=ply_path)
+    return scene_info
 
 sceneLoadTypeCallbacks = {
     "Colmap": readColmapSceneInfo,
     "Blender": readNerfSyntheticInfo,
+    "Video": readVideoInfo
 }
+
+import shutil
+
+def downsampled_subset(images_dir: str, output_dir: str, step: int = 30) -> str:
+    images_dir = pathlib.Path(images_dir)
+    output_dir = pathlib.Path(output_dir)
+
+    image_files = sorted([f for f in images_dir.iterdir() if f.suffix.lower() in [".png", ".jpg", ".jpeg"]])
+    for i, img_path in enumerate(image_files):
+        if i % step == 0:
+            shutil.copy(img_path, output_dir / img_path.name)
+    return str(output_dir)
+
+def run():
+    dataset_path = pathlib.Path("data/videos/ShakeNDry")
+    pycolmap.verbose=True
+    image_path = dataset_path / 'images'
+    subset_path = 'images'
+    output_path = dataset_path / 'sparse'
+    sparse_path = output_path / '0'
+    db_path = dataset_path / 'database.db'
+    ply_path = sparse_path / 'points3D.ply'
+
+    downsampled_path = downsampled_subset(image_path, subset_path, step=8)
+
+    pycolmap.extract_features(db_path, downsampled_path)
+    pycolmap.match_exhaustive(db_path)
+    maps = pycolmap.incremental_mapping(db_path, downsampled_path, output_path)
+    maps[0].write(output_path)
+
+    points_path = sparse_path / 'points3D.bin'
+
+    xyz, rgb, _ = read_points3D_binary(str(points_path)) 
+    colors = rgb / 255.0
+    pcd = BasicPointCloud(points=xyz, colors=colors, normals=np.zeros_like(xyz))
+    storePly(str(ply_path), xyz, rgb)
