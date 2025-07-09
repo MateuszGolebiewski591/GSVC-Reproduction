@@ -388,7 +388,7 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png", ply_pa
                            ply_path=ply_path)
     return scene_info
 
-def createCameraTransforms(path, z_spacing=1, white_background=False, training=True):
+def createCameraTransforms(path, z_spacing=1, white_background=False):
     images_folder = os.path.join(path, "images")
     image_files = sorted(os.listdir(images_folder))
     cam_infos = [] 
@@ -431,8 +431,8 @@ def compute_video_bounds(cam_infos, h=0.2, num_pts=10000):
     z_min = min(camera_z_coordinates) - h 
     z_max = max(camera_z_coordinates) + h
 
-    y_depth = np.tan(cam_infos[0].FovY / 2) * h #uses the view depth h and the fov to work out how far to distribute gaussians so the whole image fits on the screen and is evenly filled with gaussians
-    x_depth = np.tan(cam_infos[0].FovX / 2) * h
+    y_depth = np.tan(cam_infos[0].FovY / 2) * h # uses the view depth h and the fov to work out how far to distribute gaussians so the whole image fits 
+    x_depth = np.tan(cam_infos[0].FovX / 2) * h # on the screen and is evenly filled with gaussians
     x_min, x_max = -x_depth, x_depth 
     y_min, y_max = -y_depth, y_depth 
 
@@ -464,13 +464,15 @@ def generate_colmap_gaussians(path):
     return pcd, str(ply_path)
 
 def readVideoInfo(path, white_background, eval, ply_path, training):
-    #run()
+    #make_colmap()
     #return
-    z_spacing = 0.1
-    print("Generating Training Transforms")
-    train_cam_infos = createCameraTransforms(path, z_spacing=z_spacing, white_background=white_background, training=True)
+    z_spacing = 0.1 # how far apart to have the cameras
+
+    #Initializes as many cameras as there are frames. All will be at location (0,0,t) where t is a multiple of z above. 
+    print("Generating Training Transforms") 
+    train_cam_infos = createCameraTransforms(path, z_spacing=z_spacing, white_background=white_background)
     print("Generating Test Transforms")
-    test_cam_infos =  createCameraTransforms(path, z_spacing=z_spacing, white_background=white_background, training=False)
+    test_cam_infos =  createCameraTransforms(path, z_spacing=z_spacing, white_background=white_background)
     if not eval:
         train_cam_infos.extend(test_cam_infos)
         test_cam_infos = []
@@ -478,24 +480,23 @@ def readVideoInfo(path, white_background, eval, ply_path, training):
     nerf_normalization = getNerfppNorm(train_cam_infos)
     if ply_path is None:
         ply_path = os.path.join(path, "sparse/0/points3D.ply")
-        ply_path_alt = os.path.join(path, "points3D.ply")
+        ply_path_alt = os.path.join(path, "points3D.ply") #We use an alternate ply path placed beside the images directory
     print("Our play path is ", ply_path )
     print(os.path.exists(ply_path))
     if not os.path.exists(ply_path):
+        #If there is an existing ply path as a result of creating a colmap, we use it. If there isn't, check for a ply file at our custom location.
+        #If we are in training mode or if there is not a ply file at our custom location, generate a new randomized cloud of gaussians.
         ply_path = ply_path_alt
         if  not os.path.exists(ply_path) or training: 
-            num_pts = 500
-            h = 0.1
+            num_pts = 500 # starting number of gaussians
+            h = 0.1 # how much leeway along the z-axis to give for gaussians to spawn in
             print(f"Generating random point cloud ({num_pts})...")
 
-            xyz = compute_video_bounds(train_cam_infos, h, num_pts)
+            xyz = compute_video_bounds(train_cam_infos, h, num_pts) # creates randonmized gaussians within the correct bounds
             shs = np.random.random((num_pts, 3)) / 255.0
             pcd = BasicPointCloud(points=xyz, colors=SH2RGB(shs), normals=np.zeros((num_pts, 3)))
         
             storePly(ply_path, xyz, SH2RGB(shs) * 255)
-        
-            #print("Generating random colmap")
-            #pcd, ply_path = generate_colmap_gaussians(path)
         else: 
             print("Found existing gaussian cloud")
     else:
@@ -531,7 +532,7 @@ def downsampled_subset(images_dir: str, output_dir: str, step: int = 30) -> str:
             shutil.copy(img_path, output_dir / img_path.name)
     return str(output_dir)
 
-def run():
+def make_colmap(): 
     dataset_path = pathlib.Path("data/videos/ShakeNDry")
     pycolmap.verbose=True
     image_path = dataset_path / 'images'
