@@ -7,7 +7,6 @@ for lmbda in [0.004]:  # Optionally, you can try: 0.003, 0.002, 0.001, 0.0005
         #os.system(one_cmd)
         train.main([
 "-s", "data/videos/carSubset",
-"-s", "data/videos/carSubset",
 "--eval",
 "--lod", "0",
 "--voxel_size", "0.001",
