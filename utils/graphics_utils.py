@@ -64,19 +64,20 @@ def getProjectionMatrix(znear, zfar, fovX, fovY, is_training):
     P[0, 0] = 2.0 * znear / (right - left)
     P[1, 1] = 2.0 * znear / (top - bottom)
 
-    if is_training :
-
+    if is_training: # full perspective projection
         P[0, 2] = (right + left) / (right - left)
         P[1, 2] = (top + bottom) / (top - bottom)
         P[3, 2] = z_sign
         P[2, 2] = z_sign * zfar / (zfar - znear)
         P[2, 3] = -(zfar * znear) / (zfar - znear)
-    else :#Orthographic projection
-        P[2, 2] = 1.0 / (zfar - znear) #good
-        P[0, 3] = -(right + left) / (right - left) #good
-        P[1, 3] = -(top + bottom) / (top - bottom) #good
-        P[2, 3] = -znear / (zfar - znear) #good
-        P[3, 3] = 1.0 #good
+
+    else:# pseudo-orthographic projection
+        P[2, 2] = 1.0 / (zfar - znear) 
+        P[0, 3] = -(right + left) / (right - left) 
+        P[1, 3] = -(top + bottom) / (top - bottom) 
+        P[2, 3] = -znear / (zfar - znear) 
+        P[3, 3] = 1.0 
+
     return P
 
 def fov2focal(fov, pixels):

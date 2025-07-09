@@ -159,7 +159,7 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
             camera_z = viewpoint_cam.T[2]
             h = args_param.h
             z_coords = gaussians.get_anchor[:,2]
-            mask = ((z_coords >= (camera_z - h)) & (z_coords <= (camera_z + h))).to(gaussians.get_anchor.dtype)
+            mask = ((z_coords >= (camera_z - h)) & (z_coords <= (camera_z + h))).to(gaussians.get_anchor.dtype) # Creates the mask that defines the sliding window
             forward_voxel_visible_mask = prefilter_voxel(viewpoint_cam, gaussians, pipe, background) & mask.bool()
             backward_voxel_visible_mask = prefilter_voxel(backward_viewpoint_cam, gaussians, pipe, background) & mask.bool()
             voxel_visible_mask = forward_voxel_visible_mask | backward_voxel_visible_mask

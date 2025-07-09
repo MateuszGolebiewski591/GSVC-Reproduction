@@ -266,30 +266,12 @@ def render(viewpoint_camera, backward_viewpoint_camera, pc : GaussianModel, pipe
         rotations = rot_bwd,
         cov3D_precomp = None)
     
-    #img_fwd = rendered_image.permute(1, 2, 0).contiguous()
-    #img_bwd = rendered_image_bwd.permute(1, 2, 0).contiguous()
-
-    #rgb_fwd = img_fwd[..., :3]
-    #rgb_bwd = img_bwd[..., :3]
-
-    #alpha_fwd = opacitytorch.ones_like(rgb_fwd[..., :1])
-    #alpha_bwd = opacity_bwdtorch.ones_like(rgb_bwd[..., :1])
-
-    #rgb_blend = (rgb_fwd * alpha_fwd  + rgb_bwd * alpha_bwd) / (alpha_fwd + alpha_bwd + 1e-5)
-    #alpha_blend = torch.clamp(alpha_fwd + alpha_bwd, max=1.0)
-
-    #blended = torch.cat([rgb_blend, alpha_blend], dim=-1)
-    #blended = blended.permute(2,0,1).contiguous
-
-    #assert rendered_image.shape == rendered_image_bwd.shape
-    #assert rendered_image.device == rendered_image_bwd.device
-    
     rendered_image = rendered_image.contiguous()
     rendered_image_bwd = rendered_image_bwd.contiguous()
 
     blended_image = 0.5 * (rendered_image + rendered_image_bwd)
     blended_mask = mask | mask_bwd
-    if is_training:
+    if is_training: # params only returned during training
         blended_neural_opacity = 0.5 * (neural_opacity + neural_opacity_bwd)
         if bit_per_param is not None and bit_per_param_bwd is not None:
             bit_per_param = 0.5 * (bit_per_param + bit_per_param_bwd)
@@ -304,16 +286,16 @@ def render(viewpoint_camera, backward_viewpoint_camera, pc : GaussianModel, pipe
 
     def blend_parameters(mask_fwd, mask_bwd, merged_mask, param_fwd, param_bwd, size):    
         is_vector = param_fwd.ndim == 1
-        shape = (size,) if is_vector else (size, param_fwd.shape[1])
-        full_param_fwd = torch.zeros(shape, device=param_fwd.device, dtype=param_fwd.dtype)
+        shape = (size,) if is_vector else (size, param_fwd.shape[1]) #sizes are either (x,3) or (x,1)
+        full_param_fwd = torch.zeros(shape, device=param_fwd.device, dtype=param_fwd.dtype) #Create mask of full size
         full_param_bwd = torch.zeros_like(full_param_fwd)
         
-        full_param_fwd[mask_fwd] = param_fwd
-        full_param_bwd[mask_bwd] = param_bwd
+        full_param_fwd[mask_fwd] = param_fwd # params are a subset of the full gaussian sample 
+        full_param_bwd[mask_bwd] = param_bwd # this upscales the subset back to their original shape, allowing for blending
 
         visibility_count = mask_fwd.int() + mask_bwd.int()
         if not is_vector:
-            visibility_count = visibility_count.unsqueeze(-1)
+            visibility_count = visibility_count.unsqueeze(-1) # prevents averageing 1 and 0 to 0.5
         visibility_count = visibility_count.clamp(min=1)
 
         combined_param = (full_param_fwd + full_param_bwd) / visibility_count
