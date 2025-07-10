@@ -484,7 +484,7 @@ def readVideoInfo(path, white_background, eval, ply_path, training):
     if not os.path.exists(ply_path):
         ply_path = ply_path_alt
         if  not os.path.exists(ply_path) or training: 
-            num_pts = 500
+            num_pts = 25_000
             h = 0.1
             print(f"Generating random point cloud ({num_pts})...")
 
