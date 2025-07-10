@@ -205,16 +205,17 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
             Ll1 = l1_loss(image, gt_image)
 
             ssim_loss = (1.0 - ssim(image, gt_image))
-            scaling_reg = scaling.prod(dim=1).mean()
-            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * ssim_loss + 0.01*scaling_reg
+            #scaling_reg = scaling.prod(dim=1).mean()
+            scaling_reg = torch.mean(gaussians._scaling.exp())
+            loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * ssim_loss + 0.1*scaling_reg
 
             if bit_per_param is not None:
                 _, bit_hash_grid, MB_hash_grid, _ = get_binary_vxl_size((gaussians.get_encoding_params()+1)/2)
                 denom = gaussians._anchor.shape[0]*(gaussians.feat_dim+6+3*gaussians.n_offsets)
                 loss = loss + args_param.lmbda * (bit_per_param + bit_hash_grid / denom)
 
-                loss = loss + 5e-4 * torch.mean(torch.sigmoid(gaussians._mask))
-            
+            loss = loss + 5e-4 * torch.mean(torch.sigmoid(gaussians._mask))
+
             loss.backward()
 
             iter_end.record()
@@ -265,6 +266,8 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
                 if (iteration in checkpoint_iterations):
                     logger.info("\n[ITER {}] Saving Checkpoint".format(iteration))
                     torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
+                if iteration % 1000 == 0:
+                    gaussians.log_opacity_distribution()
             torch.cuda.synchronize()    
         except RuntimeError as e: 
             print(f"[CUDA Warning] Iteration{iter} failed with error: {e}")
@@ -274,7 +277,7 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
                 print("[Fatal] GPU memory access violation. Consider restart.")
                 break 
             continue
-        
+                    
     torch.cuda.synchronize(); t_end = time.time()
     logger.info("\n Total Training time: {}".format(t_end-t_start-log_time_sub))
 

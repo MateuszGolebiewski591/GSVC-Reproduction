@@ -488,7 +488,7 @@ class GaussianModel(nn.Module): #This is the main nerual model
         self._anchor_feat = nn.Parameter(anchors_feat.requires_grad_(True))
         self._scaling = nn.Parameter(scales.requires_grad_(True))
         self._rotation = nn.Parameter(rots.requires_grad_(False))
-        self._opacity = nn.Parameter(opacities.requires_grad_(False))
+        self._opacity = nn.Parameter(opacities.requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_anchor.shape[0]), device="cuda")
 
 
@@ -912,6 +912,7 @@ class GaussianModel(nn.Module): #This is the main nerual model
                 self._opacity = optimizable_tensors["opacity"]
 
     def adjust_anchor(self, check_interval=100, success_threshold=0.8, grad_threshold=0.0002, min_opacity=0.005): # training-time anchor maintenance routine
+        init = self.get_anchor.shape[0]
         # # adding anchors
         grads = self.offset_gradient_accum / self.offset_denom
         grads[grads.isnan()] = 0.0
@@ -961,11 +962,12 @@ class GaussianModel(nn.Module): #This is the main nerual model
         temp_anchor_demon = self.anchor_demon[~prune_mask]
         del self.anchor_demon
         self.anchor_demon = temp_anchor_demon
-
+        print(prune_mask.shape[0])
         if prune_mask.shape[0]>0:
             self.prune_anchor(prune_mask)
 
         self.max_radii2D = torch.zeros((self.get_anchor.shape[0]), device="cuda")
+        print(f"Changed gaussians from {init} to {self.get_anchor.shape[0]}")
 
     def save_mlp_checkpoints(self,path): # saves the MLP components of the model (components used for predictions mostly)
         mkdir_p(os.path.dirname(path))
@@ -1351,3 +1353,22 @@ class GaussianModel(nn.Module): #This is the main nerual model
 
         return log_info
 
+    def log_opacity_distribution(self, bins=[0.0, 0.01, 0.02, 0.04, 0.06, 0.08, 0.1, 0.2]):
+        #opacities = self._opacity.sigmoid().detach().cpu().view(-1)
+        opacities = torch.sigmoid(self._opacity)
+        hist = torch.histc(opacities, bins=len(bins)-1, min=bins[0], max=bins[-1])
+        print(f"[Opacity Histogram] Total: {len(opacities)} Gaussians")
+        for i in range(len(hist)):
+            low = bins[i]
+            high = bins[i + 1]
+            count = int(hist[i].item())
+            bar = "#" * (count // max(1, len(opacities) // 100))  # normalize bar length
+            print(f"  {low:.2f}–{high:.2f}: {count:6d} | {bar}")
+        opacities = torch.sigmoid(self._opacity)
+        print("Opacity stats:", opacities.min().item(), opacities.max().item(), opacities.mean().item())
+        bins = torch.histc(opacities, bins=10, min=0.0, max=0.2)
+        for i, count in enumerate(bins):
+            print(f"[{i/10:.1f}–{(i+1)/10:.1f}) : {int(count.item())}")
+        print(f"[Opacity] mean={opacities.mean():.6f}, max={opacities.max():.6f}, min={opacities.min():.6f}")
+        visible_count = (opacities > 0.01).sum().item()
+        print(f"[Visible Gaussians] {visible_count} / {len(opacities)}")
