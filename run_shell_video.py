@@ -6,7 +6,7 @@ for lmbda in [0.004]:  # Optionally, you can try: 0.003, 0.002, 0.001, 0.0005
         one_cmd = f'CUDA_VISIBLE_DEVICES={0} python train.py -s data/videos/{scene} --eval --lod 0 --voxel_size 0.001 --update_init_factor 4 --iterations 30_000 -m outputs/videos/{scene}/{lmbda} --lmbda {lmbda}'
         #os.system(one_cmd)
         train.main([
-"-s", "data/videos/carSubset",
+"-s", "data/videos/carSubset", #formatted this way so a debugger can step through it
 "--eval",
 "--lod", "0",
 "--voxel_size", "0.001",
