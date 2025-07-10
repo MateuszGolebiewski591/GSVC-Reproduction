@@ -216,6 +216,12 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
 
             loss = loss + 5e-4 * torch.mean(torch.sigmoid(gaussians._mask))
 
+            true_opacity = torch.sigmoid(gaussians._opacity)
+            #opacity_reg = torch.mean(true_opacity * (1.0 - true_opacity))
+            entropy = -torch.mean(true_opacity * torch.log(true_opacity + 1e-8) + (1 - true_opacity) * torch.log(1 - true_opacity + 1e-8))
+            loss += 0.5 * entropy
+            #loss = loss + 0.1 * opacity_reg
+
             loss.backward()
 
             iter_end.record()
