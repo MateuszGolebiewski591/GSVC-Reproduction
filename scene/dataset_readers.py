@@ -432,10 +432,10 @@ def createCameraTransforms(path, z_spacing=1, white_background=False):
                             image_path=image_path, image_name=image_name, width=width, height=height))
     return cam_infos, backward_cam_infos
 
-def compute_video_bounds(cam_infos, h=0.2, num_pts=10000):
+def compute_video_bounds(cam_infos, h=0.1, num_pts=10000):
     camera_z_coordinates = [cam.T[2] for cam in cam_infos] #Work out the min and max z within which to spawn gaussians
-    z_min = min(camera_z_coordinates) - h 
-    z_max = max(camera_z_coordinates) + h
+    z_min = min(camera_z_coordinates) - 3*h 
+    z_max = max(camera_z_coordinates) + 3*h
 
     y_depth = np.tan(cam_infos[0].FovY / 2) * h # uses the view depth h and the fov to work out how far to distribute gaussians so the whole image fits 
     x_depth = np.tan(cam_infos[0].FovX / 2) * h # on the screen and is evenly filled with gaussians
@@ -478,7 +478,7 @@ def readVideoInfo(path, white_background, eval, ply_path, training, h=0.1, num_p
     print("Generating Training Transforms") 
     train_cam_infos, backward_train_cam_infos = createCameraTransforms(path, z_spacing=z_spacing, white_background=white_background)
     print("Generating Test Transforms")
-    test_cam_infos, backward_test_cam_infos =  createCameraTransforms(path, z_spacing=z_spacing, white_background=white_background, training=False)
+    test_cam_infos, backward_test_cam_infos = createCameraTransforms(path, z_spacing=z_spacing, white_background=white_background)
 
     if not eval:
         train_cam_infos.extend(test_cam_infos)
