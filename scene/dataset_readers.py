@@ -478,7 +478,7 @@ def readVideoInfo(path, white_background, eval, ply_path, training, h=0.1, num_p
     print("Generating Training Transforms") 
     train_cam_infos, backward_train_cam_infos = createCameraTransforms(path, z_spacing=z_spacing, white_background=white_background)
     print("Generating Test Transforms")
-    test_cam_infos, backward_test_cam_infos =  createCameraTransforms(path, z_spacing=z_spacing, white_background=white_background, training=False)
+    test_cam_infos, backward_test_cam_infos =  createCameraTransforms(path, z_spacing=z_spacing, white_background=white_background)
 
     if not eval:
         train_cam_infos.extend(test_cam_infos)

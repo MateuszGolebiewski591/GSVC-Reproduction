@@ -274,7 +274,7 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
                 print("[Fatal] GPU memory access violation. Consider restart.")
                 break 
             continue
-        
+    print(f"final gaussians count: {gaussians.get_anchor.shape[0]}")
     torch.cuda.synchronize(); t_end = time.time()
     logger.info("\n Total Training time: {}".format(t_end-t_start-log_time_sub))
 
