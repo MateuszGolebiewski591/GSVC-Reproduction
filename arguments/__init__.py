@@ -144,7 +144,7 @@ class OptimizationParams(ParamGroup):
         self.update_interval = 100
         self.update_until = 30_000
         
-        self.min_opacity = 0.05  # 0.2
+        self.min_opacity = 0.005  # 0.2
         self.success_threshold = 0.8
         self.densify_grad_threshold = 0.0002
 
