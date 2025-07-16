@@ -192,7 +192,6 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
         Ll1 = l1_loss(image, gt_image)
 
         ssim_loss = (1.0 - ssim(image, gt_image))
-        #scaling_reg = scaling.prod(dim=1).mean()
         scaling_reg = torch.mean(gaussians._scaling.exp())
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * ssim_loss + 0.1*scaling_reg
 
@@ -204,10 +203,8 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
             loss = loss + 5e-4 * torch.mean(torch.sigmoid(gaussians._mask))
         
         true_opacity = torch.sigmoid(gaussians._opacity)
-        #opacity_reg = torch.mean(true_opacity * (1.0 - true_opacity))
         entropy = -torch.mean(true_opacity * torch.log(true_opacity + 1e-8) + (1 - true_opacity) * torch.log(1 - true_opacity + 1e-8))
         loss += 0.5 * entropy
-        #loss = loss + 0.1 * opacity_reg
 
         loss.backward()
 
@@ -260,6 +257,7 @@ def training(args_param, dataset, opt, pipe, dataset_name, testing_iterations, s
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
             if iteration % 1000 == 0:
                 gaussians.log_opacity_distribution()
+    print(f"Final gaussian count: {gaussians.get_anchor.shape[0]}")
     torch.cuda.synchronize(); t_end = time.time()
     logger.info("\n Total Training time: {}".format(t_end-t_start-log_time_sub))
 
